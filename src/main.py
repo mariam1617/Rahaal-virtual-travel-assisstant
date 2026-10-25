@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.config import settings
+from src.api.supervisor import router as supervisor_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,3 +31,5 @@ def health_check():
         "service": settings.project_name,
         "version": settings.version
     }
+
+app.include_router(supervisor_router, prefix="/api/v1")
