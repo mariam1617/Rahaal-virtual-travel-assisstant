@@ -1,4 +1,5 @@
 # Environments
+AgenticEnv/
 venv/
 env/
 ENV/
@@ -56,3 +57,4 @@ Thumbs.db
 
 # Jupyter Notebook (if you use it for agent prototyping)
 .ipynb_checkpoints/
+AgenticEnv/pyvenv.cfg
