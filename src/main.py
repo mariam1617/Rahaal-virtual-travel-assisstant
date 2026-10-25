@@ -20,3 +20,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+@app.get("/health", tags=["System"])
+def health_check():
+    """
+    TODO: expanded later to ping the database or verify vector store connectivity.
+    """
+    return {
+        "status": "healthy",
+        "service": settings.project_name,
+        "version": settings.version
+    }
