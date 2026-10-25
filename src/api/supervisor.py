@@ -2,8 +2,12 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from src.runner import execute_graph_sync
+from src.agents.supervisor.router import create_supervisor_graph
 
 router = APIRouter(prefix="/supervisor", tags=["Supervisor Agent"])
+
+# Compile the supervisor graph once at module load
+supervisor_app = create_supervisor_graph()
 
 # Pydantic schemas for strict payload validation
 class ChatRequest(BaseModel):
@@ -22,7 +26,7 @@ def supervisor_chat(request: ChatRequest):
     Main entry point for user inquiries. 
     Synchronously routes the request through the Supervisor LangGraph.
     """
-    # 1. Construct the initial state schema (Dev 3)
+    # 1. Construct the initial state
     initial_state = {
         "user_id": request.user_id,
         "session_id": request.session_id,
@@ -30,17 +34,17 @@ def supervisor_chat(request: ChatRequest):
         "current_intent": "unclassified"
     }
     
-    # 2. Execute the graph ( Dev 4 )
-    # from app.agents.supervisor_graph import supervisor_app
-    # final_state = execute_graph_sync(supervisor_app, initial_state)
+    # 2. Execute the graph (Dev 4)
+    final_state = execute_graph_sync(supervisor_app, initial_state)
     
-    # 3. Temporary mock response for testing
-    final_state = {
-        "response": f"Acknowledged: '{request.message}'. Graph execution pending.",
-        "routed_to": "profiling_stub"
-    }
+    response_text = final_state.get(
+        "response",
+        f"Request routed to {final_state.get('next_agent', 'specialist')}."
+    )
+    routed_to = final_state.get("next_agent", "unknown")
     
     return ChatResponse(
-        response=final_state["response"],
-        routed_to=final_state["routed_to"]
-    )
+        response=response_text,
+        routed_to=routed_to,
+        current_location=final_state.get("current_location")
+    )
