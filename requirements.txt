@@ -2,6 +2,7 @@
 langchain==1.3.13
 langgraph==1.2.11
 langchain-openai
+langchain-google-genai
 # langchain-anthropic 
 
 # Memory, embeddings and tokenization
