@@ -20,3 +20,8 @@ class OverallState(TypedDict):
     next_agent: Optional[str]
     errors: Annotated[List[str], operator.add]
     booking_status: Optional[str]
+
+    # Geo location(Story 2.1)
+    raw_coordinates: Optional[Dict[str, float]]
+    current_location: Optional[str]
+    location_details: Optional[Dict[str, Any]]
