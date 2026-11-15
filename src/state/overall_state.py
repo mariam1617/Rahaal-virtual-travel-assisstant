@@ -35,3 +35,9 @@ class OverallState(TypedDict):
     is_verified: Optional[bool]
     verified_response: Optional[str]
     verification_result: Optional[Dict[str, Any]]
+
+    # Planner & Constraint Loop (Story 3.1, 3.2)
+    is_constraint_valid: Optional[bool]
+    constraint_errors: Annotated[List[str], operator.add]
+    repair_attempts: int
+    total_cost: Optional[float]

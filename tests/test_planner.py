@@ -193,3 +193,92 @@ def test_draft_generator_node():
     assert "Luxor" in result["response"]
 
 
+# =========================================================================
+# 4. Milestone 4: Constraint & Budget Validator Tests (Story 3.2)
+# =========================================================================
+from src.agents.planner.constraint_validator import (
+    validate_budget,
+    validate_logistics,
+    constraint_validator_node,
+)
+from src.state.schema import ItineraryDay
+
+
+def test_validate_budget_within_budget():
+    """Verify budget validation passes when total cost is within budget."""
+    days = [
+        ItineraryDay(day_number=1, activities=[], estimated_cost=80.0),
+        ItineraryDay(day_number=2, activities=[], estimated_cost=90.0),
+    ]
+    plan = GeneratedPlan(plan_id="p1", title="Trip", days=days)
+    is_valid, err, total_cost, overage = validate_budget(plan, max_budget=200.0)
+    assert is_valid is True
+    assert err is None
+    assert total_cost == 170.0
+    assert overage == 0.0
+
+
+def test_validate_budget_exceeds():
+    """Verify budget validation fails and calculates overage when cost exceeds budget."""
+    days = [
+        ItineraryDay(day_number=1, activities=[], estimated_cost=150.0),
+        ItineraryDay(day_number=2, activities=[], estimated_cost=150.0),
+    ]
+    plan = GeneratedPlan(plan_id="p2", title="Trip", days=days)
+    is_valid, err, total_cost, overage = validate_budget(plan, max_budget=200.0)
+    assert is_valid is False
+    assert "exceeds user budget" in err
+    assert total_cost == 300.0
+    assert overage == 100.0
+
+
+def test_validate_logistics_normal():
+    """Verify logistical transit validation passes for reasonable durations."""
+    activities = [
+        {"name": "Museum", "travel_from_prev_mins": 30},
+        {"name": "Pyramids", "travel_from_prev_mins": 45},
+    ]
+    plan = GeneratedPlan(plan_id="p3", days=[ItineraryDay(day_number=1, activities=activities)])
+    is_valid, errors = validate_logistics(plan)
+    assert is_valid is True
+    assert len(errors) == 0
+
+
+def test_validate_logistics_exceeds():
+    """Verify logistical transit validation catches excessive travel time."""
+    activities = [
+        {"name": "Alexandria", "travel_from_prev_mins": 180},
+        {"name": "Cairo", "travel_from_prev_mins": 180},
+    ]
+    plan = GeneratedPlan(plan_id="p4", days=[ItineraryDay(day_number=1, activities=activities)])
+    is_valid, errors = validate_logistics(plan, max_transit_hours=3.5)
+    assert is_valid is False
+    assert len(errors) == 1
+    assert "Day 1 transit time" in errors[0]
+
+
+def test_constraint_validator_node_valid():
+    """Verify constraint validator node approves valid plan."""
+    req = TripRequirements(destination="Cairo", total_budget=500.0, duration_days=2)
+    plan = build_draft_itinerary(req)
+    state = {"current_plan": plan, "trip_requirements": req, "repair_attempts": 0}
+
+    result = constraint_validator_node(state)
+    assert result["is_constraint_valid"] is True
+    assert result["next_agent"] == "plan_validated"
+    assert result["current_plan"].status == "validated"
+
+
+def test_constraint_validator_node_invalid():
+    """Verify constraint validator node detects overage and routes to repair."""
+    req = TripRequirements(destination="Cairo", total_budget=20.0, duration_days=3)  # Insufficient budget
+    plan = build_draft_itinerary(req)
+    state = {"current_plan": plan, "trip_requirements": req, "repair_attempts": 0}
+
+    result = constraint_validator_node(state)
+    assert result["is_constraint_valid"] is False
+    assert result["next_agent"] == "constraint_repair"
+    assert len(result["constraint_errors"]) > 0
+
+
+
