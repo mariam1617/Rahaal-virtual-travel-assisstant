@@ -16,6 +16,7 @@ from src.agents.supervisor.router import (
     OUT_OF_SCOPE_RESPONSE,
 )
 from src.agents.feedback.profiling import PROFILING_GREETING_PROMPT
+from src.agents.supervisor.context import hydrate_context_node, route_context
 
 
 # ---------------------------------------------------------
@@ -116,6 +117,38 @@ def test_conditional_edge_valid_subgraph():
         "confidence": 0.95
     }
     assert supervisor_conditional_edge(state) == "planner"
+
+
+def test_context_hydration_known_user():
+    """Verify known user preferences are loaded before routing."""
+    result = hydrate_context_node({"user_id": "user_101", "current_location": "Cairo"})
+
+    assert result["context_loaded"] is True
+    assert result["user_preferences"].user_id == "user_101"
+    assert result["current_location"] == "Cairo"
+    assert route_context(result) == "supervisor"
+
+
+def test_context_hydration_unknown_user_routes_to_profiling():
+    """Verify unknown users do not silently receive an empty profile."""
+    result = hydrate_context_node({"user_id": "unknown_user"})
+
+    assert result["context_loaded"] is False
+    assert result["needs_profiling"] is True
+    assert "No profile found" in result["context_warning"]
+    assert route_context(result) == "profiling"
+
+
+def test_supervisor_graph_unknown_user_enters_profiling():
+    """Verify unknown-user context gating occurs before Supervisor classification."""
+    graph = create_supervisor_graph()
+    result = graph.invoke({
+        "user_id": "unknown_user",
+        "messages": [("user", "Plan a 3-day itinerary for Cairo")],
+    })
+
+    assert result["needs_profiling"] is True
+    assert result["next_agent"] == "profiling_completed"
 
 
 # ---------------------------------------------------------

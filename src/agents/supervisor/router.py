@@ -308,6 +308,7 @@ def create_supervisor_graph():
     """
     from langgraph.graph import StateGraph, START, END
     from src.agents.feedback.profiling import profiling_agent_node
+    from src.agents.supervisor.context import hydrate_context_node, route_context
     from src.agents.tourist_help.intent_resolver import resolve_location_node
 
     workflow = StateGraph(dict)
@@ -318,10 +319,16 @@ def create_supervisor_graph():
     workflow.add_node("profiling", profiling_agent_node)
 
     workflow.add_node("resolve_location", resolve_location_node)
+    workflow.add_node("hydrate_context", hydrate_context_node)
 
     # 2. Add edges & conditional routing
     workflow.add_edge(START, "resolve_location")
-    workflow.add_edge("resolve_location", "supervisor")
+    workflow.add_edge("resolve_location", "hydrate_context")
+    workflow.add_conditional_edges(
+        "hydrate_context",
+        route_context,
+        {"supervisor": "supervisor", "profiling": "profiling"},
+    )
     workflow.add_conditional_edges(
         "supervisor",
         supervisor_conditional_edge,

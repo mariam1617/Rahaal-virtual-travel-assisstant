@@ -10,6 +10,9 @@ class OverallState(TypedDict):
     
     # الذاكرة الدائمة (Long-Term Memory)
     user_preferences: Optional[UserPreferences]
+    context_loaded: Optional[bool]
+    context_warning: Optional[str]
+    needs_profiling: Optional[bool]
     
     # بيانات الرحلة الحالية (Short-Term Session)
     trip_requirements: Optional[TripRequirements]
