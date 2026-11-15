@@ -6,6 +6,7 @@ class OverallState(TypedDict):
     # مدخلات ومحادثة
     messages: Annotated[List[Dict[str, Any]], operator.add]
     user_id: str
+    user_query: Optional[str]
     
     # الذاكرة الدائمة (Long-Term Memory)
     user_preferences: Optional[UserPreferences]
@@ -19,6 +20,7 @@ class OverallState(TypedDict):
     # متغيرات التوجيه والتنفيذ
     next_agent: Optional[str]
     current_intent: Optional[str]
+    help_domain: Optional[str]
     errors: Annotated[List[str], operator.add]
     booking_status: Optional[str]
 
@@ -26,3 +28,10 @@ class OverallState(TypedDict):
     raw_coordinates: Optional[Dict[str, float]]
     current_location: Optional[str]
     location_details: Optional[Dict[str, Any]]
+
+    # RAG & Verification (Story 2.2, Story 2.3, Story 2.4)
+    candidate_response: Optional[str]
+    retrieved_context: Optional[str]
+    is_verified: Optional[bool]
+    verified_response: Optional[str]
+    verification_result: Optional[Dict[str, Any]]
