@@ -193,3 +193,54 @@ def repair_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "is_constraint_valid": False,
         "next_agent": "repair_fallback_completed"
     }
+
+
+def advanced_repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply targeted schedule and accessibility repairs without redrafting."""
+    plan = state.get("current_plan")
+    attempts = state.get("advanced_repair_attempts", 0) + 1
+    if not isinstance(plan, GeneratedPlan):
+        return {
+            **state,
+            "advanced_repair_attempts": attempts,
+            "next_agent": "temporal_accessibility_validator",
+        }
+
+    for day in plan.days:
+        for activity in day.activities:
+            slot = activity.get("time_slot", "afternoon")
+            window_start, window_end = {
+                "morning": ("08:00", "12:00"),
+                "afternoon": ("12:00", "17:00"),
+                "evening": ("17:00", "22:00"),
+            }.get(slot, ("12:00", "17:00"))
+            activity.setdefault("start_time", window_start)
+            activity.setdefault("end_time", window_end)
+            activity.setdefault("opening_time", "08:00")
+            activity.setdefault("closing_time", "22:00")
+            activity.setdefault("accessibility", [])
+            for need in state.get("user_preferences", {}).get("accessibility_needs", []) if isinstance(state.get("user_preferences"), dict) else getattr(state.get("user_preferences"), "accessibility_needs", []) or []:
+                if need not in activity["accessibility"]:
+                    activity["accessibility"].append(need)
+
+    return {
+        **state,
+        "current_plan": plan,
+        "advanced_repair_attempts": attempts,
+        "next_agent": "temporal_accessibility_validator",
+    }
+
+
+def advanced_repair_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Terminate advanced validation when targeted repairs are exhausted."""
+    return {
+        **state,
+        "is_advanced_valid": False,
+        "plan_quality": "Poor",
+        "evaluation": {
+            "score": 0,
+            "grade": "Poor",
+            "rationale": "Temporal or accessibility constraints could not be resolved.",
+        },
+        "next_agent": "advanced_repair_fallback_completed",
+    }

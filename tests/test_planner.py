@@ -295,6 +295,10 @@ from src.agents.planner.graph import (
     planner_app,
     route_validation,
 )
+from src.agents.planner.temporal_validator import validate_temporal
+from src.agents.planner.evaluator import plan_evaluation_fallback_node, plan_evaluation_node
+from src.api.models import PlannerRequest
+from src.api.planner import create_plan
 
 
 def test_route_validation():
@@ -316,7 +320,9 @@ def test_planner_graph_valid_plan_ends_after_validation():
     result = planner_app.invoke({"trip_requirements": req, "repair_attempts": 0, "messages": []})
 
     assert result["is_constraint_valid"] is True
-    assert result["current_plan"].status == "validated"
+    assert result["current_plan"].status == "approved"
+    assert result["is_advanced_valid"] is True
+    assert result["evaluation"]["grade"] == "Good"
 
 
 def test_planner_graph_falls_back_after_three_repairs():
@@ -327,6 +333,50 @@ def test_planner_graph_falls_back_after_three_repairs():
     assert result["is_constraint_valid"] is False
     assert result["repair_attempts"] == 3
     assert result["next_agent"] == "repair_fallback_completed"
+
+
+def test_temporal_validator_reports_missing_metadata():
+    """Verify strict temporal validation rejects incomplete activity metadata."""
+    plan = GeneratedPlan(
+        plan_id="p_temporal",
+        days=[ItineraryDay(
+            day_number=1,
+            activities=[{"name": "Museum", "time_slot": "morning"}],
+        )],
+    )
+    is_valid, errors = validate_temporal(plan)
+
+    assert is_valid is False
+    assert any("missing start_time" in error for error in errors)
+    assert any("missing opening_time" in error for error in errors)
+
+
+def test_planner_api_returns_plan_diagnostics():
+    """Verify the Planner API returns an evaluated plan and diagnostics."""
+    response = create_plan(
+        PlannerRequest(destination="Cairo", duration_days=2, total_budget=500.0)
+    )
+
+    assert response.plan["status"] == "approved"
+    assert response.is_constraint_valid is True
+    assert response.is_advanced_valid is True
+    assert response.evaluation["grade"] == "Good"
+
+
+def test_poor_plan_preserves_best_effort_status_and_warning():
+    """Verify Poor evaluation keeps a reviewable but non-executable plan."""
+    plan = GeneratedPlan(plan_id="poor_1", title="Needs Review")
+    evaluated = plan_evaluation_node({
+        "current_plan": plan,
+        "advanced_errors": ["Unresolved conflict", "Missing access"],
+        "messages": [],
+    })
+    result = plan_evaluation_fallback_node(evaluated)
+
+    assert result["plan_quality"] == "Poor"
+    assert result["is_executable"] is False
+    assert result["current_plan"].status == "review"
+    assert "best-effort" in result["response"]
 
 
 def test_repair_budget_violations():
