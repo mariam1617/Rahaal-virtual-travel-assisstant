@@ -150,3 +150,46 @@ def test_profiling_check_node_complete():
     assert res["needs_profiling"] is False
     assert res["next_agent"] == "draft_generator"
 
+
+# =========================================================================
+# 3. Milestone 3: Draft Generator Tests (Story 3.1)
+# =========================================================================
+from src.agents.planner.draft_generator import (
+    build_draft_itinerary,
+    draft_generator_node,
+)
+from src.state.schema import GeneratedPlan
+
+
+def test_build_draft_itinerary_structure():
+    """Verify draft itinerary builds valid days and time slots."""
+    req = TripRequirements(destination="Cairo", duration_days=3, total_budget=400.0)
+    plan = build_draft_itinerary(req)
+
+    assert isinstance(plan, GeneratedPlan)
+    assert plan.status == "draft"
+    assert len(plan.days) == 3
+    assert "Cairo" in plan.title
+
+    for day in plan.days:
+        assert len(day.activities) >= 2
+        assert day.estimated_cost > 0
+        slots = [a["time_slot"] for a in day.activities]
+        assert "morning" in slots
+
+
+def test_draft_generator_node():
+    """Verify draft generator node updates state with current_plan and routes to validator."""
+    state = {
+        "trip_requirements": TripRequirements(destination="Luxor", duration_days=2, total_budget=300.0),
+        "messages": [("user", "Plan 2 days in Luxor")]
+    }
+    result = draft_generator_node(state)
+
+    assert "current_plan" in result
+    plan = result["current_plan"]
+    assert len(plan.days) == 2
+    assert result["next_agent"] == "constraint_validator"
+    assert "Luxor" in result["response"]
+
+
