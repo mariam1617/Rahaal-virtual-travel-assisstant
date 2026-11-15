@@ -175,3 +175,129 @@ def test_api_supervisor_chat_with_coordinates(mock_reverse_geocode):
     assert data["routed_to"] == "tourist_help"
     assert data["current_location"] == "Pyramids of Giza, Giza, Egypt"
 
+
+# ---------------------------------------------------------
+# 5. Intent Parsing & Subgraph Routing Tests (Story 2.1 Item 3)
+# ---------------------------------------------------------
+import pytest
+from src.agents.tourist_help.intent_resolver import (
+    parse_tourist_intent,
+    intent_parser_node,
+    route_request,
+)
+from src.agents.tourist_help.graph import create_tourist_help_graph
+
+
+@pytest.mark.parametrize("query,expected_intent", [
+    ("I was robbed, call the police immediately!", "emergency"),
+    ("What is the phone number for the ambulance in Cairo?", "emergency"),
+    ("Tourist police contact number in Hurghada", "emergency"),
+    ("Do British citizens need an entry visa on arrival?", "advisories"),
+    ("What are the rules and customs for the Cairo metro?", "advisories"),
+    ("What is the dress code when visiting mosques?", "advisories"),
+    ("Where can I eat authentic Koshary nearby?", "recommendations"),
+    ("Recommend top historical sights and cafes in Zamalek", "recommendations"),
+    ("Plan a 3-day itinerary for Luxor and Aswan", "plan_trip"),
+    ("Hello there!", "fallback"),
+    ("What is the meaning of life?", "fallback"),
+])
+def test_parse_tourist_intent_benchmark(query: str, expected_intent: str):
+    assert parse_tourist_intent(query) == expected_intent
+
+
+def test_intent_parser_node():
+    state = {"messages": [("user", "Someone stole my wallet, call tourist police!")]}
+    updated = intent_parser_node(state)
+    assert updated["current_intent"] == "emergency"
+    assert "emergency" in updated["intent"]
+
+
+@pytest.mark.parametrize("intent,expected_branch", [
+    ("emergency", "emergency"),
+    ("help_agent", "emergency"),
+    ("police", "emergency"),
+    ("advisories", "advisories"),
+    ("tourist_rag", "advisories"),
+    ("visa", "advisories"),
+    ("recommendations", "recommendations"),
+    ("places", "recommendations"),
+    ("plan_trip", "planner_agent"),
+    ("planner_agent", "planner_agent"),
+    ("unknown", "fallback"),
+    ("", "fallback"),
+])
+def test_route_request_mapping(intent: str, expected_branch: str):
+    state = {"current_intent": intent}
+    assert route_request(state) == expected_branch
+
+
+def test_tourist_help_graph_emergency_branch():
+    graph = create_tourist_help_graph()
+    initial_state = {
+        "messages": [("user", "Emergency! I need the tourist police right now.")]
+    }
+    result = graph.invoke(initial_state)
+
+    assert result["current_intent"] == "emergency"
+    assert result["next_agent"] == "emergency_completed"
+    assert "126" in result["response"]
+
+
+def test_tourist_help_graph_advisories_branch():
+    graph = create_tourist_help_graph()
+    initial_state = {
+        "messages": [("user", "Do US citizens need a visa to enter Egypt?")]
+    }
+    result = graph.invoke(initial_state)
+
+    assert result["current_intent"] == "advisories"
+    assert result["next_agent"] == "advisories_completed"
+    assert "Visa on Arrival" in result["response"]
+
+
+@patch("src.agents.tourist_help.intent_resolver.reverse_geocode")
+def test_tourist_help_graph_recommendations_branch(mock_reverse_geocode):
+    mock_reverse_geocode.return_value = LocationResponse(
+        city="Cairo",
+        country="Egypt",
+        formatted_address="Downtown Cairo, Egypt",
+        error=None
+    )
+
+    graph = create_tourist_help_graph()
+    initial_state = {
+        "messages": [("user", "Can you recommend good places to eat nearby?")],
+        "raw_coordinates": {"lat": 30.0444, "lng": 31.2357}
+    }
+    result = graph.invoke(initial_state)
+
+    assert result["current_intent"] == "recommendations"
+    assert result["current_location"] == "Downtown Cairo, Egypt"
+    assert result["raw_coordinates"] is None
+    assert result["next_agent"] == "recommendations_completed"
+    assert "Downtown Cairo" in result["response"]
+
+
+def test_tourist_help_graph_planner_delegation_branch():
+    graph = create_tourist_help_graph()
+    initial_state = {
+        "messages": [("user", "Plan a 4-day itinerary for Cairo and Alexandria")]
+    }
+    result = graph.invoke(initial_state)
+
+    assert result["current_intent"] == "plan_trip"
+    assert result["next_agent"] == "planner"
+
+
+def test_tourist_help_graph_fallback_branch():
+    graph = create_tourist_help_graph()
+    initial_state = {
+        "messages": [("user", "Hello there")]
+    }
+    result = graph.invoke(initial_state)
+
+    assert result["current_intent"] == "fallback"
+    assert result["next_agent"] == "fallback_completed"
+    assert "help with your trip in Egypt" in result["response"]
+
+

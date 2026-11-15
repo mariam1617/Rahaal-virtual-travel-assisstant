@@ -97,3 +97,120 @@ def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "error": location_response.error,
         }
     }
+
+
+def parse_tourist_intent(user_text: str) -> str:
+    """
+    Classifies a user query into one of the specialized Tourist Help categories:
+    - 'emergency': Distress, police, medical, fire, tourist police, accidents.
+    - 'advisories': Visa, passport, customs, transit rules, embassy, dress code, tipping.
+    - 'recommendations': Local dining, cafes, tourist attractions, nearby activities.
+    - 'plan_trip': Full itinerary planning.
+    - 'fallback': Ambiguous or unclassified requests.
+    """
+    text = user_text.lower().strip()
+
+    # 1. Emergency Assistance (Story 2.2)
+    emergency_keywords = [
+        "emergency", "police", "ambulance", "hospital", "stolen", "theft",
+        "robbed", "fire", "accident", "urgent", "126", "122", "123", "180",
+        "tourist police", "harassment", "scam", "danger", "help me"
+    ]
+    if any(k in text for k in emergency_keywords):
+        return "emergency"
+
+    # 2. General Advisories & Transit/Visa Rules (Story 2.3)
+    advisories_keywords = [
+        "visa", "passport", "entry requirement", "customs", "advisory", "advisories",
+        "embassy", "transit", "metro", "bus", "transport", "rules", "dress code",
+        "tipping", "baksheesh", "sim card", "laws", "regulations"
+    ]
+    if any(k in text for k in advisories_keywords):
+        return "advisories"
+
+    # 3. Contextual Place Recommendations (Story 2.4)
+    recommendation_keywords = [
+        "recommend", "restaurant", "eat", "food", "koshary", "cafe", "places",
+        "sights", "attractions", "visit", "near me", "nearby", "best spots",
+        "what to see", "museum", "pyramids"
+    ]
+    if any(k in text for k in recommendation_keywords):
+        return "recommendations"
+
+    # 4. Multi-day Planning Request (Delegation to Planner)
+    planner_keywords = ["itinerary", "plan", "days in", "day trip", "schedule"]
+    if any(k in text for k in planner_keywords):
+        return "plan_trip"
+
+    return "fallback"
+
+
+def intent_parser_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    LangGraph node for Story 2.1 Item 3:
+    Extracts the user inquiry, classifies it, and updates `current_intent`
+    in the state dictionary before branching.
+    """
+    # If already set to a valid non-default intent, preserve it
+    current_intent = state.get("current_intent")
+    if current_intent and current_intent not in ["unclassified", "unknown", "None"]:
+        return state
+
+    messages = state.get("messages", [])
+    if not messages:
+        user_prompt = "Hello"
+    else:
+        last_msg = messages[-1]
+        if isinstance(last_msg, tuple):
+            user_prompt = last_msg[1]
+        elif hasattr(last_msg, "content"):
+            user_prompt = last_msg.content
+        else:
+            user_prompt = str(last_msg)
+
+    parsed_intent = parse_tourist_intent(user_prompt)
+
+    return {
+        **state,
+        "current_intent": parsed_intent,
+        "intent": f"Tourist help parsed intent: {parsed_intent}"
+    }
+
+
+def route_request(state: Dict[str, Any]) -> str:
+    """
+    Conditional edge function for Story 2.1 Item 3:
+    Evaluates `current_intent` in the state and returns the exact target node name:
+    - 'emergency' (or 'help_agent') -> 'emergency'
+    - 'advisories' -> 'advisories'
+    - 'recommendations' -> 'recommendations'
+    - 'plan_trip' (or 'planner_agent') -> 'planner_agent'
+    - 'fallback' -> 'fallback'
+    """
+    raw_intent = str(state.get("current_intent", "")).lower().strip()
+
+    if raw_intent in ["emergency", "help_agent", "police", "medical"]:
+        return "emergency"
+    elif raw_intent in ["advisories", "tourist_rag", "rules", "visa", "transit"]:
+        return "advisories"
+    elif raw_intent in ["recommendations", "places", "places_recommendation"]:
+        return "recommendations"
+    elif raw_intent in ["plan_trip", "planner", "planner_agent"]:
+        return "planner_agent"
+    
+    return "fallback"
+
+
+def fallback_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fallback agent node within Tourist Help Subgraph for ambiguous queries.
+    """
+    fallback_response = (
+        "I'm here to help with your trip in Egypt! "
+        "You can ask for emergency assistance, visa/travel advisories, or nearby place recommendations."
+    )
+    return {
+        **state,
+        "response": fallback_response,
+        "next_agent": "fallback_completed"
+    }
