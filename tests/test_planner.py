@@ -76,3 +76,77 @@ def test_get_weather_forecast_alexandria():
     assert forecast["destination"] == "Alexandria"
     assert forecast["temperature_high_c"] < 30
     assert forecast["rain_probability_pct"] >= 0
+
+
+# =========================================================================
+# 2. Milestone 2: Active Profiling Tests (Story 5.1)
+# =========================================================================
+from src.agents.feedback.profiling import (
+    extract_constraints_from_text,
+    detect_missing_constraints,
+    ask_user_questions,
+    update_session_preferences,
+    profiling_check_node,
+)
+from src.state.schema import TripRequirements
+
+
+def test_extract_constraints_from_text():
+    """Verify extraction of destination, duration, and budget from user prompt."""
+    text = "I want to plan a 3-day trip to Luxor with a budget of $450"
+    extracted = extract_constraints_from_text(text)
+    assert extracted["destination"] == "Luxor"
+    assert extracted["duration_days"] == 3
+    assert extracted["total_budget"] == 450.0
+
+
+def test_detect_missing_constraints_all_missing():
+    """Verify detection when no requirements are provided."""
+    missing = detect_missing_constraints(None)
+    assert "destination" in missing
+    assert "duration" in missing
+    assert "budget" in missing
+
+
+def test_detect_missing_constraints_partial():
+    """Verify detection when only destination is set."""
+    req = TripRequirements(destination="Cairo")
+    missing = detect_missing_constraints(req)
+    assert "destination" not in missing
+    assert "duration" in missing
+    assert "budget" in missing
+
+
+def test_ask_user_questions():
+    """Verify dynamic question generation for missing parameters."""
+    question = ask_user_questions(["destination", "budget"])
+    assert "city or region" in question
+    assert "budget" in question
+
+
+def test_update_session_preferences():
+    """Verify updating session requirements."""
+    state = {}
+    updated = update_session_preferences(state, {"destination": "Aswan", "total_budget": 600.0, "duration_days": 4})
+    req = updated["trip_requirements"]
+    assert req.destination == "Aswan"
+    assert req.total_budget == 600.0
+    assert getattr(req, "duration_days", None) == 4
+
+
+def test_profiling_check_node_incomplete():
+    """Verify profiling node triggers clarifying questions when query is vague."""
+    state = {"messages": [("user", "I want to travel")]}
+    res = profiling_check_node(state)
+    assert res["needs_profiling"] is True
+    assert res["next_agent"] == "profiling"
+    assert len(res["missing_constraints"]) > 0
+
+
+def test_profiling_check_node_complete():
+    """Verify profiling node advances to draft_generator when all constraints are present."""
+    state = {"messages": [("user", "Plan 4 days in Cairo with budget $500")]}
+    res = profiling_check_node(state)
+    assert res["needs_profiling"] is False
+    assert res["next_agent"] == "draft_generator"
+
