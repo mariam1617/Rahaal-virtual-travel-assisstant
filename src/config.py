@@ -1,4 +1,4 @@
-# app/core/config.py
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -6,7 +6,8 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     
     # required API keys or DB URIs here later
-    
+    openmap_api_key: str
+
     # This tells Pydantic to look for a .env file in the root directory
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

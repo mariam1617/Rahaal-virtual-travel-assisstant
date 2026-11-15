@@ -3,6 +3,15 @@ from src.state.schema import UserPreferences, DietaryPreference
 
 # Mock Database: بيانات تجريبية لمستخدم وتفضيلاته
 MOCK_USER_DB: Dict[str, dict] = {
+    "test_user": {
+        "user_id": "test_user",
+        "name": "Test User",
+        "nationality": "Egyptian",
+        "dietary": [DietaryPreference.NONE],
+        "budget_level": "moderate",
+        "interests": [],
+        "accessibility_needs": []
+    },
     "user_101": {
         "user_id": "user_101",
         "name": "سما ضياء",

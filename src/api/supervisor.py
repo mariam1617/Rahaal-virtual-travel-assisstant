@@ -14,6 +14,7 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
     session_id: str
+    coordinates: dict[str, float] | None = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -31,7 +32,8 @@ def supervisor_chat(request: ChatRequest):
         "user_id": request.user_id,
         "session_id": request.session_id,
         "messages": [("user", request.message)],
-        "current_intent": "unclassified"
+        "current_intent": "unclassified",
+        "raw_coordinates": request.coordinates
     }
     
     # 2. Execute the graph (Dev 4)
@@ -47,4 +49,4 @@ def supervisor_chat(request: ChatRequest):
         response=response_text,
         routed_to=routed_to,
         current_location=final_state.get("current_location")
-    )
+    )

@@ -21,6 +21,7 @@ class UserPreferences(BaseModel):
 # --- 2. بيانات الرحلة الحالية المؤقتة (Current Trip / Session Data) ---
 class TripRequirements(BaseModel):
     destination: str
+    duration_days: Optional[int] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     total_budget: Optional[float] = None
