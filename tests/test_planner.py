@@ -281,4 +281,79 @@ def test_constraint_validator_node_invalid():
     assert len(result["constraint_errors"]) > 0
 
 
+# =========================================================================
+# 5. Milestone 5: Constraint Repair Node Tests (Story 3.2)
+# =========================================================================
+from src.agents.planner.repairs import (
+    repair_budget_violations,
+    repair_logistics_violations,
+    constraint_repair_node,
+    repair_fallback_node,
+)
+
+
+def test_repair_budget_violations():
+    """Verify budget repair swaps expensive activities to reduce total cost."""
+    activities = [
+        {"name": "Luxury Tour", "cost_usd": 80.0, "transit_cost_usd": 10.0, "time_slot": "morning"},
+        {"name": "Fine Dining", "cost_usd": 50.0, "transit_cost_usd": 5.0, "time_slot": "evening"},
+    ]
+    plan = GeneratedPlan(plan_id="p_rep_1", days=[ItineraryDay(day_number=1, activities=activities, estimated_cost=145.0)])
+    repaired_plan = repair_budget_violations(plan, target_budget=50.0, overage=95.0)
+
+    total_repaired_cost = sum(d.estimated_cost for d in repaired_plan.days)
+    assert total_repaired_cost < 145.0
+    swapped_names = [a["name"] for a in repaired_plan.days[0].activities]
+    assert any("Koshary" in name or "Walking" in name or "Coptic" in name for name in swapped_names)
+
+
+def test_repair_logistics_violations():
+    """Verify logistics repair caps excessive transit times."""
+    activities = [
+        {"name": "Place 1", "travel_from_prev_mins": 120, "cost_usd": 10.0, "transit_cost_usd": 15.0},
+    ]
+    plan = GeneratedPlan(plan_id="p_rep_2", days=[ItineraryDay(day_number=1, activities=activities, estimated_cost=25.0)])
+    repaired_plan = repair_logistics_violations(plan)
+
+    assert repaired_plan.days[0].activities[0]["travel_from_prev_mins"] == 30
+    assert repaired_plan.days[0].activities[0]["transit_cost_usd"] == 5.0
+
+
+def test_constraint_repair_node():
+    """Verify constraint repair node increments repair_attempts and routes to validator."""
+    req = TripRequirements(destination="Cairo", total_budget=50.0, duration_days=2)
+    activities = [
+        {"name": "Expensive Tour", "cost_usd": 100.0, "transit_cost_usd": 10.0, "time_slot": "morning"}
+    ]
+    plan = GeneratedPlan(plan_id="p_rep_3", days=[ItineraryDay(day_number=1, activities=activities, estimated_cost=110.0)])
+    state = {
+        "current_plan": plan,
+        "trip_requirements": req,
+        "repair_attempts": 0,
+        "constraint_errors": ["Total estimated cost $110.00 exceeds user budget of $50.00 by $60.00 USD."],
+        "budget_overage": 60.0,
+        "messages": []
+    }
+
+    result = constraint_repair_node(state)
+    assert result["repair_attempts"] == 1
+    assert result["next_agent"] == "constraint_validator"
+    assert result["total_cost"] < 110.0
+    assert "Constraint Repair (Attempt 1/3)" in result["response"]
+
+
+def test_repair_fallback_node():
+    """Verify repair fallback node provides diagnostic explanation when attempts exhaust."""
+    state = {
+        "constraint_errors": ["Budget exceeded by $100.00 USD"],
+        "messages": []
+    }
+    result = repair_fallback_node(state)
+    assert result["is_constraint_valid"] is False
+    assert result["next_agent"] == "repair_fallback_completed"
+    assert "Itinerary Constraint Notice" in result["response"]
+    assert "Budget exceeded by $100.00 USD" in result["response"]
+
+
+
 
