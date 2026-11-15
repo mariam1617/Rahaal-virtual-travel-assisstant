@@ -290,6 +290,43 @@ from src.agents.planner.repairs import (
     constraint_repair_node,
     repair_fallback_node,
 )
+from src.agents.planner.graph import (
+    create_planner_graph,
+    planner_app,
+    route_validation,
+)
+
+
+def test_route_validation():
+    """Verify all validation outcomes map to the expected graph branches."""
+    assert route_validation({"is_constraint_valid": True, "repair_attempts": 0}) == "valid"
+    assert route_validation({"is_constraint_valid": False, "repair_attempts": 2}) == "repair"
+    assert route_validation({"is_constraint_valid": False, "repair_attempts": 3}) == "fallback"
+
+
+def test_create_planner_graph_compiles():
+    """Verify the Planner Part 1 graph factory returns a compiled graph."""
+    assert create_planner_graph() is not None
+    assert planner_app is not None
+
+
+def test_planner_graph_valid_plan_ends_after_validation():
+    """Verify a feasible draft reaches the Part 1 terminal boundary."""
+    req = TripRequirements(destination="Cairo", duration_days=2, total_budget=500.0)
+    result = planner_app.invoke({"trip_requirements": req, "repair_attempts": 0, "messages": []})
+
+    assert result["is_constraint_valid"] is True
+    assert result["current_plan"].status == "validated"
+
+
+def test_planner_graph_falls_back_after_three_repairs():
+    """Verify an infeasible draft follows the repair cycle and then falls back."""
+    req = TripRequirements(destination="Cairo", duration_days=3, total_budget=20.0)
+    result = planner_app.invoke({"trip_requirements": req, "repair_attempts": 0, "messages": []})
+
+    assert result["is_constraint_valid"] is False
+    assert result["repair_attempts"] == 3
+    assert result["next_agent"] == "repair_fallback_completed"
 
 
 def test_repair_budget_violations():
