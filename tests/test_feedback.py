@@ -412,3 +412,203 @@ def test_insight_extractor_node():
     assert result["pending_preferences"]["travel_habits"] == ["morning flights"]
 
 
+# =========================================================================
+# Step 2.4: Long-Term Preference Update & Profile Store Tests (Story 5.3)
+# =========================================================================
+
+from src.db.profile_store import ProfileStore, cosine_similarity
+from src.state.memory import MOCK_USER_DB
+from src.agents.feedback.preference_learning import ltm_preference_update_node
+from src.agents.feedback.graph import feedback_app, create_feedback_graph
+
+
+def test_profile_store_get_and_update():
+    """Validates persistent profile reading and updating in LTM store."""
+    user_id = "test_user_ltm"
+    # Ensure fresh user
+    if user_id in MOCK_USER_DB:
+        del MOCK_USER_DB[user_id]
+
+    profile = ProfileStore.ensure_user_profile(user_id, name="LTM Tester")
+    assert profile.user_id == user_id
+
+    # Update with extracted preferences
+    extracted = extract_preference_insights("I am vegan, prefer morning flights, and love museums")
+    updated = ProfileStore.update_user_preferences(user_id, extracted)
+
+    assert DietaryPreference.VEGAN in updated.dietary
+    assert "museums" in updated.interests
+    assert "morning flights" in MOCK_USER_DB[user_id]["travel_habits"]
+
+
+def test_profile_store_vector_insight_search():
+    """Validates semantic search over historical preference insights."""
+    user_id = "search_user_test"
+    extracted = extract_preference_insights("I prefer morning flights and luxury 5-star hotels")
+    ProfileStore.update_user_preferences(user_id, extracted)
+
+    # Query with semantic variation
+    results = ProfileStore.search_user_insights(user_id, query="early flight schedule departure", top_k=2)
+    assert len(results) >= 1
+    top_hit = results[0]
+    assert top_hit["key"] == "morning_flights"
+    assert top_hit["similarity_score"] > 0.0
+
+
+def test_ltm_preference_update_node_standalone():
+    """Tests the ltm_preference_update_node execution for a pure preference feedback."""
+    user_id = "node_user_test"
+    state = {
+        "user_id": user_id,
+        "messages": [("user", "I prefer morning flights and eat halal")],
+        "feedback_type": "long_term_preference"
+    }
+
+    result = ltm_preference_update_node(state)
+    assert result["next_agent"] == "feedback_completed"
+    assert "Profile Updated" in result["response"]
+    assert DietaryPreference.HALAL in result["user_preferences"].dietary
+
+
+def test_ltm_preference_update_node_compound_chains_to_modifier():
+    """Tests compound intent routes to itinerary_modifier after saving to LTM."""
+    user_id = "compound_user_test"
+    state = {
+        "user_id": user_id,
+        "messages": [("user", "I am vegetarian, please change dinner to a vegetarian restaurant")],
+        "feedback_type": "both"
+    }
+
+    result = ltm_preference_update_node(state)
+    assert result["next_agent"] == "itinerary_modifier"
+    assert DietaryPreference.VEGETARIAN in result["user_preferences"].dietary
+
+
+# =========================================================================
+# End-to-End Feedback Subgraph Workflow Tests
+# =========================================================================
+
+def test_feedback_subgraph_e2e_trip_adjustment():
+    """End-to-end execution of trip modification request through feedback_app."""
+    plan = _create_sample_test_plan()
+    input_state = {
+        "user_id": "e2e_user_trip",
+        "current_plan": plan,
+        "trip_requirements": TripRequirements(destination="Cairo", total_budget=300.0),
+        "messages": [("user", "Change dinner to an Italian restaurant")]
+    }
+
+    result = feedback_app.invoke(
+        input_state,
+        config={"configurable": {"thread_id": "test_e2e_trip_adj"}}
+    )
+
+    assert result["feedback_type"] == "trip_adjustment"
+    assert "Italian" in result["response"]
+    d1_dinner = [a for a in result["current_plan"].days[0].activities if a.get("time_slot") == "evening"][0]
+    assert "Italian" in d1_dinner["name"]
+
+
+def test_feedback_subgraph_e2e_preference_learning():
+    """End-to-end execution of preference learning request through feedback_app."""
+    input_state = {
+        "user_id": "e2e_user_pref",
+        "messages": [("user", "I prefer morning flights and boutique hotels")]
+    }
+
+    result = feedback_app.invoke(
+        input_state,
+        config={"configurable": {"thread_id": "test_e2e_pref_learn"}}
+    )
+
+    assert result["feedback_type"] == "long_term_preference"
+    assert "morning flights" in result["response"].lower()
+    assert "morning flights" in MOCK_USER_DB["e2e_user_pref"]["travel_habits"]
+
+
+def test_feedback_subgraph_e2e_compound():
+    """End-to-end execution of compound request (both preference + trip adjustment)."""
+    plan = _create_sample_test_plan()
+    input_state = {
+        "user_id": "e2e_user_compound",
+        "current_plan": plan,
+        "trip_requirements": TripRequirements(destination="Cairo", total_budget=300.0),
+        "messages": [("user", "I am vegetarian, so please change tonight's dinner to a vegetarian restaurant")]
+    }
+
+    result = feedback_app.invoke(
+        input_state,
+        config={"configurable": {"thread_id": "test_e2e_compound"}}
+    )
+
+    assert result["feedback_type"] == "both"
+    # Preference was saved to LTM
+    assert DietaryPreference.VEGETARIAN in MOCK_USER_DB["e2e_user_compound"]["dietary"]
+    # Itinerary dinner was modified
+    d1_dinner = [a for a in result["current_plan"].days[0].activities if a.get("time_slot") == "evening"][0]
+    assert "Vegetarian" in d1_dinner["name"] or "Abou Tarek" in d1_dinner["name"]
+
+
+def test_feedback_subgraph_e2e_fallback():
+    """End-to-end execution of unrecognized feedback query."""
+    input_state = {
+        "user_id": "e2e_user_fallback",
+        "messages": [("user", "Hello there")]
+    }
+
+    result = feedback_app.invoke(
+        input_state,
+        config={"configurable": {"thread_id": "test_e2e_fallback"}}
+    )
+
+    assert result["feedback_type"] == "unknown"
+    assert "couldn't quite understand" in result["response"].lower()
+
+
+# =========================================================================
+# FastAPI Feedback Endpoint Tests
+# =========================================================================
+
+from fastapi.testclient import TestClient
+from src.main import app
+
+
+def test_api_feedback_trip_adjustment():
+    """Tests POST /api/v1/feedback/process for trip adjustment."""
+    client = TestClient(app)
+    plan = _create_sample_test_plan()
+
+    payload = {
+        "user_id": "api_feedback_user",
+        "message": "Change dinner to an Italian restaurant",
+        "current_plan": plan.model_dump(),
+        "trip_requirements": {"destination": "Cairo", "total_budget": 500.0}
+    }
+
+    response = client.post("/api/v1/feedback/process", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["feedback_type"] == "trip_adjustment"
+    assert "Italian" in data["response"]
+    assert data["current_plan"] is not None
+
+
+def test_api_feedback_preference_learning():
+    """Tests POST /api/v1/feedback/process for preference learning."""
+    client = TestClient(app)
+
+    payload = {
+        "user_id": "api_pref_user",
+        "message": "I prefer morning flights and luxury hotels",
+    }
+
+    response = client.post("/api/v1/feedback/process", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["feedback_type"] == "long_term_preference"
+    assert "Profile Updated" in data["response"]
+    assert data["user_preferences"] is not None
+
+
+
+

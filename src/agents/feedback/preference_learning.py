@@ -266,3 +266,71 @@ def insight_extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "pending_preferences": extracted.model_dump(),
         "next_agent": "ltm_updater"
     }
+
+
+def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    LangGraph Node for Long-Term Preference Update (Story 5.3):
+    Saves extracted insights persistently into the user's Long-Term Memory (LTM)
+    profile store and updates active session state.
+    """
+    from src.db.profile_store import ProfileStore
+
+    user_id = state.get("user_id") or "test_user"
+
+    # Hydrate ExtractedPreferences object
+    pending = state.get("pending_preferences")
+    if pending and isinstance(pending, dict):
+        extracted = ExtractedPreferences(**pending)
+    else:
+        messages = state.get("messages", [])
+        prompt = ""
+        if messages:
+            last = messages[-1]
+            prompt = last[1] if isinstance(last, tuple) else getattr(last, "content", str(last))
+        extracted = extract_preference_insights(prompt)
+
+    # Persistently update LTM profile store
+    updated_profile = ProfileStore.update_user_preferences(user_id, extracted)
+
+    # Highlight learned features for the user
+    learned_items: List[str] = []
+    if extracted.travel_habits:
+        learned_items.extend(extracted.travel_habits)
+    if extracted.dietary:
+        learned_items.extend([d.value for d in extracted.dietary])
+    if extracted.budget_level:
+        learned_items.append(f"{extracted.budget_level} tier")
+    if extracted.interests:
+        learned_items.extend(extracted.interests)
+    if extracted.accessibility_needs:
+        learned_items.extend(extracted.accessibility_needs)
+
+    summary_phrase = ", ".join(learned_items) if learned_items else "preferences"
+
+    fb_type = state.get("feedback_type", "long_term_preference")
+
+    if fb_type == "both":
+        # Compound intent: preference saved, proceed to modify the itinerary
+        next_node = "itinerary_modifier"
+        confirm_msg = (
+            f"✅ Saved your preference for **{summary_phrase}** to your travel profile. "
+            f"Now updating your active itinerary..."
+        )
+    else:
+        next_node = "feedback_completed"
+        confirm_msg = (
+            f"✅ **Profile Updated!** I've recorded your preference for **{summary_phrase}** "
+            f"in your travel profile. Future itineraries and recommendations will automatically reflect this!"
+        )
+
+    ai_msg = AIMessage(content=confirm_msg)
+
+    return {
+        **state,
+        "user_preferences": updated_profile,
+        "response": confirm_msg,
+        "messages": state.get("messages", []) + [ai_msg],
+        "next_agent": next_node
+    }
+

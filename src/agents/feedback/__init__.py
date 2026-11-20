@@ -30,7 +30,14 @@ from .preference_learning import (
     compute_insight_embedding,
     extract_preference_insights,
     insight_extractor_node,
+    ltm_preference_update_node,
     EMBEDDING_DIM,
+)
+from .graph import (
+    create_feedback_graph,
+    feedback_app,
+    feedback_fallback_node,
+    route_after_ltm,
 )
 
 __all__ = [
@@ -55,5 +62,10 @@ __all__ = [
     "compute_insight_embedding",
     "extract_preference_insights",
     "insight_extractor_node",
+    "ltm_preference_update_node",
     "EMBEDDING_DIM",
+    "create_feedback_graph",
+    "feedback_app",
+    "feedback_fallback_node",
+    "route_after_ltm",
 ]
