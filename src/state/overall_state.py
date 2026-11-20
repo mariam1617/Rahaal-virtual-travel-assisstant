@@ -50,3 +50,11 @@ class OverallState(TypedDict):
     constraint_errors: Annotated[List[str], operator.add]
     repair_attempts: int
     total_cost: Optional[float]
+
+    # Feedback & Memory Subgraph (Story 5.2, 5.3)
+    feedback_type: Optional[str]
+    feedback_confidence: Optional[float]
+    feedback_reasoning: Optional[str]
+    extracted_insights: Optional[List[Dict[str, Any]]]
+    pending_preferences: Optional[Dict[str, Any]]
+    plan_modification: Optional[Dict[str, Any]]
