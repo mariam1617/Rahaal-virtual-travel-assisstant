@@ -23,3 +23,7 @@ class PlannerResponse(BaseModel):
     errors: List[str] = Field(default_factory=list)
     approval_required: bool = False
     approval_status: str = "pending"
+    booking_status: str = "not_started"
+    booking_attempts: int = 0
+    bookings: List[Dict[str, Any]] = Field(default_factory=list)
+    booking_errors: List[str] = Field(default_factory=list)

@@ -54,4 +54,8 @@ def create_plan(request: PlannerRequest) -> PlannerResponse:
         errors=result.get("advanced_errors", []) + result.get("constraint_errors", []),
         approval_required=interrupted,
         approval_status=result.get("approval_status", "pending"),
+        booking_status="blocked" if interrupted else "not_started",
+        booking_attempts=0,
+        bookings=[],
+        booking_errors=[],
     )

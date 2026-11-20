@@ -26,6 +26,9 @@ class OverallState(TypedDict):
     help_domain: Optional[str]
     errors: Annotated[List[str], operator.add]
     booking_status: Optional[str]
+    booking_attempts: int
+    bookings: List[Dict[str, Any]]
+    booking_errors: Annotated[List[str], operator.add]
 
     # Geo location (Story 2.1)
     raw_coordinates: Optional[Dict[str, float]]
