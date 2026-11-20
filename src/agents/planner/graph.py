@@ -1,13 +1,11 @@
-"""
-Planner Subgraph Implementation (Story 3.1 - 3.2 / Week 3).
-
-Assembles draft generation with cyclic budget and logistics validation.
-"""
+"""Planner workflow with validation, final evaluation, and HITL approval."""
 
 from typing import Any, Dict
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from src.agents.execution.hitl import human_approval_node
 from src.agents.planner.constraint_validator import constraint_validator_node
 from src.agents.planner.draft_generator import draft_generator_node
 from src.agents.planner.repairs import (
@@ -38,7 +36,7 @@ def route_advanced_validation(state: Dict[str, Any]) -> str:
     return "fallback"
 
 
-def create_planner_graph():
+def create_planner_graph(checkpointer=None):
     """Build and compile the Week 3 Planner Part 1 workflow."""
     workflow = StateGraph(dict)
 
@@ -51,6 +49,7 @@ def create_planner_graph():
     workflow.add_node("advanced_repair_fallback", advanced_repair_fallback_node)
     workflow.add_node("plan_evaluation", plan_evaluation_node)
     workflow.add_node("evaluation_fallback", plan_evaluation_fallback_node)
+    workflow.add_node("human_approval", human_approval_node)
 
     workflow.add_edge(START, "draft_generator")
     workflow.add_edge("draft_generator", "constraint_validator")
@@ -79,11 +78,12 @@ def create_planner_graph():
     workflow.add_conditional_edges(
         "plan_evaluation",
         lambda state: "good" if state.get("plan_quality") == "Good" else "poor",
-        {"good": END, "poor": "evaluation_fallback"},
+        {"good": "human_approval", "poor": "evaluation_fallback"},
     )
     workflow.add_edge("evaluation_fallback", END)
+    workflow.add_edge("human_approval", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 
-planner_app = create_planner_graph()
+planner_app = create_planner_graph(checkpointer=MemorySaver())

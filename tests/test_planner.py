@@ -297,6 +297,8 @@ from src.agents.planner.graph import (
 )
 from src.agents.planner.temporal_validator import validate_temporal
 from src.agents.planner.evaluator import plan_evaluation_fallback_node, plan_evaluation_node
+from src.agents.execution.hitl import human_approval_node
+from langgraph.types import Command
 from src.api.models import PlannerRequest
 from src.api.planner import create_plan
 
@@ -315,20 +317,49 @@ def test_create_planner_graph_compiles():
 
 
 def test_planner_graph_valid_plan_ends_after_validation():
-    """Verify a feasible draft reaches the Part 1 terminal boundary."""
+    """Verify a feasible draft pauses at the approval boundary."""
     req = TripRequirements(destination="Cairo", duration_days=2, total_budget=500.0)
-    result = planner_app.invoke({"trip_requirements": req, "repair_attempts": 0, "messages": []})
+    config = {"configurable": {"thread_id": "planner-valid-plan"}}
+    result = planner_app.invoke(
+        {"trip_requirements": req, "repair_attempts": 0, "messages": []},
+        config=config,
+    )
 
     assert result["is_constraint_valid"] is True
     assert result["current_plan"].status == "approved"
     assert result["is_advanced_valid"] is True
     assert result["evaluation"]["grade"] == "Good"
+    assert result["__interrupt__"]
+
+    resumed = planner_app.invoke(Command(resume={"approved": True}), config=config)
+    assert resumed["approval_status"] == "approved"
+    assert resumed["next_agent"] == "execution_pending"
+
+
+def test_human_approval_rejection_is_graceful():
+    """Verify rejecting an itinerary prevents execution and preserves review status."""
+    req = TripRequirements(destination="Cairo", duration_days=2, total_budget=500.0)
+    config = {"configurable": {"thread_id": "planner-rejected-plan"}}
+    planner_app.invoke(
+        {"trip_requirements": req, "repair_attempts": 0, "messages": []},
+        config=config,
+    )
+
+    result = planner_app.invoke(Command(resume={"approved": False}), config=config)
+
+    assert result["approval_status"] == "rejected"
+    assert result["is_executable"] is False
+    assert result["current_plan"].status == "review"
+    assert result["next_agent"] == "human_approval_completed"
 
 
 def test_planner_graph_falls_back_after_three_repairs():
     """Verify an infeasible draft follows the repair cycle and then falls back."""
     req = TripRequirements(destination="Cairo", duration_days=3, total_budget=20.0)
-    result = planner_app.invoke({"trip_requirements": req, "repair_attempts": 0, "messages": []})
+    result = planner_app.invoke(
+        {"trip_requirements": req, "repair_attempts": 0, "messages": []},
+        config={"configurable": {"thread_id": "planner-fallback-plan"}},
+    )
 
     assert result["is_constraint_valid"] is False
     assert result["repair_attempts"] == 3

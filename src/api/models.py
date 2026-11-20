@@ -21,3 +21,5 @@ class PlannerResponse(BaseModel):
     temporal_errors: List[str] = Field(default_factory=list)
     accessibility_errors: List[str] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
+    approval_required: bool = False
+    approval_status: str = "pending"
