@@ -18,6 +18,14 @@ from .router import (
     route_feedback,
     FEEDBACK_ROUTER_SYSTEM_PROMPT,
 )
+from .itinerary_update import (
+    parse_modification_request,
+    apply_modification_to_plan,
+    validate_plan_through_planner_loops,
+    itinerary_modifier_node,
+    CUISINE_REPLACEMENTS,
+    ATTRACTION_REPLACEMENTS,
+)
 
 __all__ = [
     "detect_missing_constraints",
@@ -32,4 +40,10 @@ __all__ = [
     "feedback_router_node",
     "route_feedback",
     "FEEDBACK_ROUTER_SYSTEM_PROMPT",
+    "parse_modification_request",
+    "apply_modification_to_plan",
+    "validate_plan_through_planner_loops",
+    "itinerary_modifier_node",
+    "CUISINE_REPLACEMENTS",
+    "ATTRACTION_REPLACEMENTS",
 ]
