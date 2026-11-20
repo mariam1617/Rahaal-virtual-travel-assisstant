@@ -27,3 +27,6 @@ class PlannerResponse(BaseModel):
     booking_attempts: int = 0
     bookings: List[Dict[str, Any]] = Field(default_factory=list)
     booking_errors: List[str] = Field(default_factory=list)
+    calendar_status: str = "not_started"
+    calendar_events: List[Dict[str, Any]] = Field(default_factory=list)
+    calendar_errors: List[str] = Field(default_factory=list)

@@ -29,6 +29,9 @@ class OverallState(TypedDict):
     booking_attempts: int
     bookings: List[Dict[str, Any]]
     booking_errors: Annotated[List[str], operator.add]
+    calendar_status: Optional[str]
+    calendar_events: List[Dict[str, Any]]
+    calendar_errors: Annotated[List[str], operator.add]
 
     # Geo location (Story 2.1)
     raw_coordinates: Optional[Dict[str, float]]

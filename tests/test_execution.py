@@ -9,12 +9,14 @@ from src.agents.execution.booking import (
 )
 from src.agents.execution.graph import create_execution_graph, execution_app
 from src.state.schema import GeneratedPlan, ItineraryDay, TripRequirements
+from src.agents.execution.calendar_sync import calendar_sync_node
 from src.tools.booking_mock import (
     search_activities,
     search_booking,
     search_flights,
     search_hotels,
 )
+from src.tools.calendar import sync_google_calendar_event
 
 
 def test_mock_booking_supports_all_resource_types():
@@ -155,3 +157,93 @@ def test_booking_node_recovers_after_transient_failures():
 def test_execution_graph_compiles():
     assert create_execution_graph() is not None
     assert execution_app is not None
+
+
+def test_calendar_tool_creates_event_with_location_and_date():
+    event = sync_google_calendar_event(
+        summary="Grand Egyptian Museum",
+        location="Cairo",
+        start_date="2026-12-01",
+        start_time="09:00",
+        end_time="12:00",
+        description="Confirmed booking ID: mock-activity-gem",
+    )
+
+    assert event["success"] is True
+    assert event["status"] == "confirmed"
+    assert event["location"] == "Cairo"
+    assert event["start"]["dateTime"] == "2026-12-01T09:00"
+    assert "booking ID" in event["description"]
+
+
+def test_calendar_sync_requires_confirmed_booking():
+    result = calendar_sync_node({
+        "booking_status": "failed",
+        "bookings": [],
+    })
+
+    assert result["calendar_status"] == "blocked"
+    assert "confirmed bookings" in result["calendar_errors"][0]
+
+
+def test_calendar_sync_writes_confirmed_booking():
+    result = calendar_sync_node({
+        "booking_status": "confirmed",
+        "trip_requirements": TripRequirements(destination="Cairo"),
+        "bookings": [{
+            "success": True,
+            "status": "confirmed",
+            "name": "Grand Egyptian Museum",
+            "destination": "Cairo",
+            "date": "2026-12-01",
+            "booking_id": "mock-activity-gem",
+        }],
+    })
+
+    assert result["calendar_status"] == "synced"
+    assert len(result["calendar_events"]) == 1
+    assert result["next_agent"] == "end_execution"
+
+
+def test_calendar_sync_reports_service_failure():
+    result = calendar_sync_node({
+        "booking_status": "confirmed",
+        "mock_calendar_failure": True,
+        "bookings": [{
+            "status": "confirmed",
+            "name": "Hotel",
+            "destination": "Cairo",
+            "date": "2026-12-01",
+            "booking_id": "mock-hotel-cairo",
+        }],
+    })
+
+    assert result["calendar_status"] == "failed"
+    assert len(result["calendar_errors"]) == 1
+
+
+def test_confirmed_execution_graph_syncs_calendar():
+    plan = GeneratedPlan(
+        plan_id="calendar-e2e",
+        days=[ItineraryDay(
+            day_number=1,
+            activities=[{
+                "name": "Grand Egyptian Museum",
+                "booking_type": "activity",
+                "date": "2026-12-01",
+            }],
+        )],
+    )
+    result = execution_app.invoke(
+        {
+            "approval_status": "approved",
+            "booking_attempts": 0,
+            "current_plan": plan,
+            "trip_requirements": TripRequirements(destination="Cairo"),
+        },
+        config={"configurable": {"thread_id": "calendar-sync-e2e"}},
+    )
+
+    assert result["booking_status"] == "confirmed"
+    assert result["calendar_status"] == "synced"
+    assert result["next_agent"] == "end_execution"

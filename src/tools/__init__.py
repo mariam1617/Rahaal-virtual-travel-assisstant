@@ -11,6 +11,7 @@ from .booking_mock import (
     search_flights,
     search_hotels,
 )
+from .calendar import create_calendar_event, sync_google_calendar_event
 
 __all__ = [
     "search_local_places",
@@ -22,4 +23,6 @@ __all__ = [
     "search_flights",
     "search_hotels",
     "search_activities",
+    "create_calendar_event",
+    "sync_google_calendar_event",
 ]

@@ -8,24 +8,27 @@ from src.agents.execution.booking import (
     route_booking,
     search_booking_node,
 )
+from src.agents.execution.calendar_sync import calendar_sync_node
 
 
 def create_execution_graph(checkpointer=None):
     workflow = StateGraph(dict)
     workflow.add_node("SearchBooking", search_booking_node)
     workflow.add_node("booking_fallback", booking_fallback_node)
+    workflow.add_node("CalendarSync", calendar_sync_node)
     workflow.add_edge(START, "SearchBooking")
     workflow.add_conditional_edges(
         "SearchBooking",
         route_booking,
         {
-            "confirmed": END,
+            "confirmed": "CalendarSync",
             "retry": "SearchBooking",
             "blocked": END,
             "fallback": "booking_fallback",
         },
     )
     workflow.add_edge("booking_fallback", END)
+    workflow.add_edge("CalendarSync", END)
     return workflow.compile(checkpointer=checkpointer)
 
 

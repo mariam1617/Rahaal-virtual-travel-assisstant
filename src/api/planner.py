@@ -58,4 +58,7 @@ def create_plan(request: PlannerRequest) -> PlannerResponse:
         booking_attempts=0,
         bookings=[],
         booking_errors=[],
+        calendar_status="not_started",
+        calendar_events=[],
+        calendar_errors=[],
     )
