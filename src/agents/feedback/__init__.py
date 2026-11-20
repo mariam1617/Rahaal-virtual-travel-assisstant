@@ -26,6 +26,12 @@ from .itinerary_update import (
     CUISINE_REPLACEMENTS,
     ATTRACTION_REPLACEMENTS,
 )
+from .preference_learning import (
+    compute_insight_embedding,
+    extract_preference_insights,
+    insight_extractor_node,
+    EMBEDDING_DIM,
+)
 
 __all__ = [
     "detect_missing_constraints",
@@ -46,4 +52,8 @@ __all__ = [
     "itinerary_modifier_node",
     "CUISINE_REPLACEMENTS",
     "ATTRACTION_REPLACEMENTS",
+    "compute_insight_embedding",
+    "extract_preference_insights",
+    "insight_extractor_node",
+    "EMBEDDING_DIM",
 ]

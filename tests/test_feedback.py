@@ -339,3 +339,76 @@ def test_itinerary_modifier_node_no_active_plan():
     assert "no active itinerary" in result["response"].lower()
     assert result["next_agent"] == "feedback_completed"
 
+
+# =========================================================================
+# Step 2.3: Insight Extractor Pipeline Tests (Story 5.3)
+# =========================================================================
+
+from src.agents.feedback.preference_learning import (
+    compute_insight_embedding,
+    extract_preference_insights,
+    insight_extractor_node,
+    EMBEDDING_DIM,
+)
+import math
+
+
+def test_compute_insight_embedding():
+    """Validates embedding dimensionality, normalization, and determinism."""
+    vec1 = compute_insight_embedding("I prefer morning flights")
+    vec2 = compute_insight_embedding("I prefer morning flights")
+    vec3 = compute_insight_embedding("I am vegan and eat halal")
+
+    assert len(vec1) == EMBEDDING_DIM
+    # Determinism
+    assert vec1 == vec2
+    # Semantics difference
+    assert vec1 != vec3
+    # L2 Unit Normalization
+    norm = math.sqrt(sum(x * x for x in vec1))
+    assert abs(norm - 1.0) < 1e-3
+
+
+def test_extract_preference_insights_flight_habit():
+    """Tests extracting flight timing preference."""
+    pref = extract_preference_insights("I prefer morning flights and direct flights")
+    assert "morning flights" in pref.travel_habits
+    assert "direct flights" in pref.travel_habits
+    assert any(i.key == "morning_flights" for i in pref.insights)
+    # Check embedding is present
+    flight_insight = [i for i in pref.insights if i.key == "morning_flights"][0]
+    assert len(flight_insight.embedding) == EMBEDDING_DIM
+
+
+def test_extract_preference_insights_dietary_and_accessibility():
+    """Tests extracting dietary rules and accessibility needs."""
+    pref = extract_preference_insights("I am vegan, eat halal, and need wheelchair access")
+    assert DietaryPreference.VEGAN in pref.dietary
+    assert DietaryPreference.HALAL in pref.dietary
+    assert "wheelchair access" in pref.accessibility_needs
+    assert len(pref.insights) >= 3
+
+
+def test_extract_preference_insights_luxury_and_interests():
+    """Tests extracting luxury tier and passions."""
+    pref = extract_preference_insights("I always prefer luxury 5-star hotels and love historical sites")
+    assert pref.budget_level == "luxury"
+    assert "historical sites" in pref.interests
+    assert any("luxury" in tag for i in pref.insights for tag in i.tags)
+
+
+def test_insight_extractor_node():
+    """Tests the insight_extractor_node updates state and routes to ltm_updater."""
+    state = {
+        "messages": [("user", "I prefer morning flights and boutique hotels")],
+        "user_id": "test_user"
+    }
+    result = insight_extractor_node(state)
+
+    assert result["next_agent"] == "ltm_updater"
+    assert "extracted_insights" in result
+    assert len(result["extracted_insights"]) >= 1
+    assert "morning_flights" in [i["key"] for i in result["extracted_insights"]]
+    assert result["pending_preferences"]["travel_habits"] == ["morning flights"]
+
+
