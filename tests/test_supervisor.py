@@ -99,10 +99,11 @@ def test_conditional_edge_out_of_scope():
 
 
 def test_conditional_edge_low_confidence_fallback():
-    # Confidence 0.50 is below threshold 0.65 -> routes to profiling fallback
+    # The router node owns low-confidence fallback and stores profiling as next_agent.
     state = {
         "messages": [("user", "Somewhere nice")],
-        "next_agent": "planner",
+        "next_agent": "profiling",
+        # "next_agent": "planner",
         "is_egypt_scoped": True,
         "confidence": 0.50
     }
@@ -117,6 +118,21 @@ def test_conditional_edge_valid_subgraph():
         "confidence": 0.95
     }
     assert supervisor_conditional_edge(state) == "planner"
+
+
+def test_supervisor_router_records_low_confidence_adjustment(monkeypatch):
+    monkeypatch.setenv("ROUTER_CONFIDENCE_THRESHOLD", "0.65")
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        lambda: None,
+    )
+
+    result = supervisor_router_node({
+        "messages": [("user", "Hello")],
+    })
+
+    assert result["next_agent"] == "profiling"
+    assert "Low confidence" in result["routing_reason"]
 
 
 def test_context_hydration_known_user():

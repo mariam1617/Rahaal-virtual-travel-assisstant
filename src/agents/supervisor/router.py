@@ -28,6 +28,7 @@ class SupervisorState(TypedDict, total=False):
     location_details: NotRequired[Dict[str, Any]]
     next_agent: NotRequired[str]
     intent: NotRequired[str]
+    routing_reason: NotRequired[str] #UPDATED 21/11: Added routing_reason to SupervisorState for better traceability of routing decisions.
     confidence: NotRequired[float]
     is_egypt_scoped: NotRequired[bool]
     response: NotRequired[str]
@@ -262,19 +263,25 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     else:
         decision = heuristic_fallback_classifier(user_prompt)
 
-    # Enforce confidence threshold & fallback
+    # Enforce confidence threshold and geography once, here.
     selected_target: TargetSubgraph = decision.target
+    routing_adjustment = ""
     if decision.target != "out_of_scope" and decision.confidence < CONFIDENCE_THRESHOLD:
         selected_target = "profiling"
-        decision.reasoning += f" (Low confidence {decision.confidence:.2f} < threshold {CONFIDENCE_THRESHOLD}. Fallback to profiling.)"
+        routing_adjustment = (
+            f"Low confidence {decision.confidence:.2f} < threshold "
+            f"{CONFIDENCE_THRESHOLD:.2f}; routed to profiling."
+        )
 
     # Enforce geographic exclusion
     if not decision.is_egypt_scoped:
         selected_target = "out_of_scope"
+        routing_adjustment = "Destination or query is outside the Egypt-only scope."
 
     return {
         "next_agent": selected_target,
         "intent": decision.reasoning,
+        "routing_reason": routing_adjustment or f"Routed to {selected_target}.",
         "confidence": decision.confidence,
         "is_egypt_scoped": decision.is_egypt_scoped
     }
@@ -288,24 +295,13 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
 
 
 def supervisor_conditional_edge(state: SupervisorState) -> str:
-     
     target = state.get("next_agent", "profiling")
-    is_egypt = state.get("is_egypt_scoped", True)
-    confidence = state.get("confidence", 1.0)
-
-    # 1. Geographic Boundary Gate
-    if not is_egypt or target == "out_of_scope":
+    if target == "out_of_scope":
         return "out_of_scope"
-
-    # 2. Confidence Fallback Gate (routes ambiguous/low-confidence queries to Profiling Agent)
-    if confidence < CONFIDENCE_THRESHOLD or target == "profiling":
+    if target == "profiling":
         return "profiling"
-
-    # 3. Valid Primary Subgraph Routes
     if target in ["planner", "tourist_help", "execution", "feedback"]:
         return target
-
-    # Default safe fallback
     return "profiling"
 
 
