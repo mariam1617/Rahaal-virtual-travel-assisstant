@@ -1,6 +1,6 @@
 from typing import Optional, Dict
 from src.state.schema import UserPreferences, DietaryPreference
-from src.db.repositories.user_repo import SQLiteUserRepository
+
 
 #UPDATE 21/11: ADDED A USER DB DATA/RA7AL.DB
 # # Mock Database: بيانات تجريبية لمستخدم وتفضيلاته
