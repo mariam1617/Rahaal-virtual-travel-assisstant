@@ -71,9 +71,34 @@ OUT_OF_SCOPE_RESPONSE = (
 
 import os
 import re
+import logging
+from functools import lru_cache
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+
 CONFIDENCE_THRESHOLD = float(os.getenv("ROUTER_CONFIDENCE_THRESHOLD", "0.65"))
+
+
+@lru_cache(maxsize=4)
+def _create_router_llm(gemini_key: Optional[str], openai_key: Optional[str], model_name: str):
+    if gemini_key:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=gemini_key,
+            temperature=0.0,
+        )
+    if openai_key:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=openai_key,
+            temperature=0.0,
+        )
+    return None
 
 
 def get_router_llm():
@@ -83,23 +108,8 @@ def get_router_llm():
     """
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
-    default_model = os.getenv("DEFAULT_MODEL", "gemini-1.5-flash")
-
-    if gemini_key:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=default_model,
-            google_api_key=gemini_key,
-            temperature=0.0
-        )
-    elif openai_key:
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model="gpt-4o-mini",
-            api_key=openai_key,
-            temperature=0.0
-        )
-    return None
+    model_name = os.getenv("DEFAULT_MODEL", DEFAULT_GEMINI_MODEL)
+    return _create_router_llm(gemini_key, openai_key, model_name)
 
 
 def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
@@ -251,8 +261,15 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
             prompt_parts.append(f"Current User Request: {user_prompt}")
             user_msg = HumanMessage(content="\n\n".join(prompt_parts))
             decision = structured_llm.invoke([system_msg, user_msg])
-        except Exception as e:
-            print(f"[Supervisor] LLM invocation failed, using fallback: {e}")
+        except Exception:
+            logger.warning(
+                "Supervisor LLM invocation failed; using heuristic fallback",
+                exc_info=True,
+                extra={
+                    "user_id": state.get("user_id"),
+                    "thread_id": state.get("session_id"),
+                },
+            )
             decision = heuristic_fallback_classifier(user_prompt)
     else:
         decision = heuristic_fallback_classifier(user_prompt)

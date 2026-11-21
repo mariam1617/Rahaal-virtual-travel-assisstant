@@ -39,7 +39,7 @@ def get_verification_llm():
     """
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
-    default_model = os.getenv("DEFAULT_MODEL", "gemini-1.5-flash")
+    default_model = os.getenv("DEFAULT_MODEL", "gemini-2.5-flash")
 
     if gemini_key:
         from langchain_google_genai import ChatGoogleGenerativeAI
