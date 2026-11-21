@@ -19,7 +19,7 @@ from langgraph.types import Command
 from src.agents.execution.graph import execution_app
 from src.agents.feedback.graph import feedback_app
 from src.agents.planner.graph import planner_app
-from src.agents.supervisor.router import create_supervisor_graph
+from src.agents.supervisor.graph import create_supervisor_graph
 from src.agents.tourist_help.graph import tourist_help_app
 from src.state.schema import TripRequirements
 from src.services.auth import AuthService

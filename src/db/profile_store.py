@@ -5,7 +5,7 @@ Story Reference: Story 5.3 - Long-Term Preference Learning (Week 6)
 """
 
 import math
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from src.state.schema import (
     UserPreferences,
     DietaryPreference,
