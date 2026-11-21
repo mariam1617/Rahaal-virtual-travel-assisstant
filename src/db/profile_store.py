@@ -38,6 +38,25 @@ class ProfileStore:
         """Fetches the user's persistent profile as a Pydantic model."""
         data = MOCK_USER_DB.get(user_id)
         if not data:
+            try:
+                from src.db.repositories.user_repo import SQLiteUserRepository
+                repo_user = SQLiteUserRepository().get_by_user_id(user_id)
+                if repo_user:
+                    data = {
+                        "user_id": repo_user.user_id,
+                        "name": repo_user.name,
+                        "nationality": repo_user.nationality or "Egyptian",
+                        "dietary": [DietaryPreference.NONE],
+                        "budget_level": "moderate",
+                        "interests": [],
+                        "accessibility_needs": [],
+                        "travel_habits": [],
+                    }
+                    MOCK_USER_DB[user_id] = data
+            except Exception:
+                pass
+
+        if not data:
             return None
         return UserPreferences(
             user_id=data["user_id"],
