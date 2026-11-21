@@ -22,6 +22,7 @@ from src.agents.planner.graph import planner_app
 from src.agents.supervisor.router import create_supervisor_graph
 from src.agents.tourist_help.graph import tourist_help_app
 from src.state.schema import TripRequirements
+from src.services.auth import AuthService
 
 logger = logging.getLogger("ra7al.ui")
 
@@ -213,6 +214,11 @@ def get_supervisor():
     return create_supervisor_graph()
 
 
+@st.cache_resource
+def get_auth_service():
+    return AuthService()
+
+
 # ----------------------------------------------------------------------------
 # Helpers (unchanged agent-facing logic)
 # ----------------------------------------------------------------------------
@@ -359,37 +365,27 @@ def init_state():
         "pending_approval": None,
         "auth_user": None,
         "show_login": False,
-        "login_error": None,
+        "auth_error": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
-def authenticate(username, password):
-    username = (username or "").strip().lower()
-    user = DEMO_USERS.get(username)
-    supplied = (password or "").encode()
-    expected = DEMO_PASSWORD.encode()
-    password_ok = hmac.compare_digest(supplied, expected)  # always compared, avoids timing leaks
-    if user and password_ok:
-        return {"user_id": username, "name": user["name"]}
-    return None
-
-
 def open_login():
     st.session_state.show_login = True
-    st.session_state.login_error = None
+    st.session_state.auth_error = None
 
 
 def close_login():
     st.session_state.show_login = False
-    st.session_state.login_error = None
+    st.session_state.auth_error = None
 
 
 def sign_out():
     st.session_state.auth_user = None
     st.session_state.show_login = False
+    st.session_state.auth_error = None
     st.session_state.messages = []
     st.session_state.route_history = []
     st.session_state.pending_approval = None
@@ -451,9 +447,11 @@ def render_navbar(user):
                 with button:
                     st.button("Sign out", on_click=sign_out, use_container_width=True, key="nav_signout")
             else:
-                spacer, button = st.columns([1.2, 1])
-                with button:
-                    st.button("Sign in", type="primary", on_click=open_login, use_container_width=True, key="nav_signin")
+                c_in, c_up = st.columns([1, 1.2], vertical_alignment="center")
+                with c_in:
+                    st.button("Sign in", on_click=open_login, use_container_width=True, key="nav_signin")
+                with c_up:
+                    st.button("Sign up", type="primary", on_click=open_login, use_container_width=True, key="nav_signup")
 
 
 def render_footer():
@@ -528,28 +526,71 @@ def render_landing():
 
 
 def render_login():
-    _, middle, _ = st.columns([1, 1.25, 1])
+    _, middle, _ = st.columns([1, 1.35, 1])
     with middle:
         with st.container(key="authcard"):
-            html('<div class="auth-card-title">Welcome back</div>')
-            html('<div class="auth-card-sub">Sign in to continue planning your Egypt trip.</div>')
-            with st.form("login_form", border=False):
-                username = st.text_input("Username", placeholder="e.g. user_101")
-                password = st.text_input("Password", type="password")
-                submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
-            if submitted:
-                account = authenticate(username, password)
-                if account:
-                    st.session_state.auth_user = account
-                    st.session_state.show_login = False
-                    st.session_state.login_error = None
-                    st.session_state.session_id = str(uuid.uuid4())
-                    st.rerun()
-                st.session_state.login_error = "Incorrect username or password."
-            if st.session_state.login_error:
-                st.error(st.session_state.login_error)
-            names = ", ".join(DEMO_USERS)
-            html(f'<div class="demo-hint"><b>Demo accounts:</b> {names}. Password: <code>{DEMO_PASSWORD}</code></div>')
+            tab_signin, tab_signup = st.tabs(["Sign In", "Sign Up (Register)"])
+
+            with tab_signin:
+                html('<div class="auth-card-title">Welcome back</div>')
+                html('<div class="auth-card-sub">Sign in to continue planning your Egypt trip.</div>')
+                with st.form("signin_form", border=False):
+                    username = st.text_input("Username", placeholder="e.g. user_101", key="login_username")
+                    password = st.text_input("Password", type="password", key="login_password")
+                    submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
+                if submitted:
+                    service = get_auth_service()
+                    success, message, user, token = service.login(username, password)
+                    if success and user:
+                        st.session_state.auth_user = {
+                            "user_id": user.user_id,
+                            "name": user.name,
+                            "token": token,
+                        }
+                        st.session_state.show_login = False
+                        st.session_state.auth_error = None
+                        st.session_state.session_id = str(uuid.uuid4())
+                        st.rerun()
+                    else:
+                        st.error(message)
+                html(f'<div class="demo-hint"><b>Demo accounts:</b> test_user, user_101, user_202. Password: <code>{DEMO_PASSWORD}</code></div>')
+
+            with tab_signup:
+                html('<div class="auth-card-title">Create Account</div>')
+                html('<div class="auth-card-sub">Join Ra7al for a personalized Egypt travel journey.</div>')
+                with st.form("signup_form", border=False):
+                    reg_name = st.text_input("Full Name", placeholder="e.g. Fatima Noor", key="reg_name")
+                    reg_username = st.text_input("Username", placeholder="e.g. fatima_travels", key="reg_username")
+                    reg_nationality = st.text_input("Nationality", value="Egyptian", key="reg_nat")
+                    reg_password = st.text_input("Password (min 6 characters)", type="password", key="reg_pwd")
+                    reg_confirm = st.text_input("Confirm Password", type="password", key="reg_confirm")
+                    reg_submit = st.form_submit_button("Create Account", type="primary", use_container_width=True)
+                if reg_submit:
+                    if reg_password != reg_confirm:
+                        st.error("Passwords do not match.")
+                    else:
+                        service = get_auth_service()
+                        success, message, user = service.register(
+                            username=reg_username,
+                            password=reg_password,
+                            name=reg_name,
+                            nationality=reg_nationality,
+                        )
+                        if success and user:
+                            # Automatically log in upon successful sign-up
+                            _, _, logged_user, token = service.login(reg_username, reg_password)
+                            st.session_state.auth_user = {
+                                "user_id": logged_user.user_id,
+                                "name": logged_user.name,
+                                "token": token,
+                            }
+                            st.session_state.show_login = False
+                            st.session_state.auth_error = None
+                            st.session_state.session_id = str(uuid.uuid4())
+                            st.rerun()
+                        else:
+                            st.error(message)
+
             st.button("Back to home", on_click=close_login, key="login_back")
 
 
