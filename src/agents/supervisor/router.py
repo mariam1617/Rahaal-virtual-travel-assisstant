@@ -2,9 +2,36 @@
 Supervisor Request Routing Engine (Story 1.2 / Dev 4)
 Item 1: Supervisor Prompt Engineering & Intent Definition
 """
+#UPDATE 21/11: 
+# Added SupervisorState as a TypedDict .
+# Added add_messages for LangGraph-managed message history.
+# Changed StateGraph(dict) to StateGraph(SupervisorState).
+# Removed manual message concatenation in the supervisor out-of-scope and profiling nodes.
+# Updated overall_state.py to use add_messages
 
-from typing import Literal
+from typing import Literal, Annotated, Any, Dict, NotRequired, TypedDict
 from pydantic import BaseModel, Field
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langgraph.graph.message import add_messages
+from src.state.schema import UserPreferences
+
+
+class SupervisorState(TypedDict, total=False):
+    messages: Annotated[list[BaseMessage], add_messages]
+    user_id: NotRequired[str]
+    user_query: NotRequired[str]
+    user_preferences: NotRequired[UserPreferences]
+    context_loaded: NotRequired[bool]
+    context_warning: NotRequired[str]
+    needs_profiling: NotRequired[bool]
+    current_location: NotRequired[str]
+    location_details: NotRequired[Dict[str, Any]]
+    next_agent: NotRequired[str]
+    intent: NotRequired[str]
+    confidence: NotRequired[float]
+    is_egypt_scoped: NotRequired[bool]
+    response: NotRequired[str]
+    rejection_reason: NotRequired[str]
 
 # The target subgraphs and outcomes recognized by the Supervisor
 TargetSubgraph = Literal[
@@ -103,8 +130,7 @@ OUT_OF_SCOPE_RESPONSE = (
 # =========================================================================
 
 import os
-from typing import Dict, Any, Optional
-from langchain_core.messages import HumanMessage, SystemMessage
+from typing import Optional
 
 CONFIDENCE_THRESHOLD = float(os.getenv("ROUTER_CONFIDENCE_THRESHOLD", "0.65"))
 
@@ -202,7 +228,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     )
 
 
-def supervisor_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     """
     Supervisor Router Node.
     Parses initial requests, maps them to primary subgraphs using structured output,
@@ -247,7 +273,6 @@ def supervisor_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
         selected_target = "out_of_scope"
 
     return {
-        **state,
         "next_agent": selected_target,
         "intent": decision.reasoning,
         "confidence": decision.confidence,
@@ -259,10 +284,10 @@ def supervisor_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
 # Item 3: Conditional Fallback Edge & Out-of-Scope Responder Node
 # =========================================================================
 
-from langchain_core.messages import AIMessage
 
 
-def supervisor_conditional_edge(state: Dict[str, Any]) -> str:
+
+def supervisor_conditional_edge(state: SupervisorState) -> str:
      
     target = state.get("next_agent", "profiling")
     is_egypt = state.get("is_egypt_scoped", True)
@@ -284,15 +309,14 @@ def supervisor_conditional_edge(state: Dict[str, Any]) -> str:
     return "profiling"
 
 
-def out_of_scope_responder_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def out_of_scope_responder_node(state: SupervisorState) -> Dict[str, Any]:
     """
     Handles out-of-scope queries by returning a courteous refusal explaining
     Ra7al's Egypt-exclusive mission.
     """
     ai_msg = AIMessage(content=OUT_OF_SCOPE_RESPONSE)
     return {
-        **state,
-        "messages": state.get("messages", []) + [ai_msg],
+        "messages": [ai_msg],
         "response": OUT_OF_SCOPE_RESPONSE,
         "rejection_reason": state.get("intent", "Destination outside Egypt."),
         "next_agent": "END",
@@ -311,7 +335,7 @@ def create_supervisor_graph():
     from src.agents.supervisor.context import hydrate_context_node, route_context
     from src.agents.tourist_help.intent_resolver import resolve_location_node
 
-    workflow = StateGraph(dict)
+    workflow = StateGraph(SupervisorState)
 
     # 1. Add nodes
     workflow.add_node("supervisor", supervisor_router_node)

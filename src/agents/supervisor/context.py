@@ -1,11 +1,14 @@
 """Context hydration for Supervisor requests (Story 1.1)."""
+#UPDATE 21/11: 
+# Added SupervisorState as a TypedDict .
 
 from typing import Any, Dict
-
 from src.state.memory import MemoryLoader
+from src.agents.supervisor.router import SupervisorState
 
+# def hydrate_context_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
-def hydrate_context_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def hydrate_context_node(state: SupervisorState) -> Dict[str, Any]:
     """Load known user preferences and preserve request/session context."""
     user_id = state.get("user_id")
     if not user_id:

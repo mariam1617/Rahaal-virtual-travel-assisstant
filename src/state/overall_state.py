@@ -1,10 +1,16 @@
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 import operator
 from src.state.schema import UserPreferences, TripRequirements, GeneratedPlan
-
+#UPDATE 21/11: 
+# Added add_messages for LangGraph-managed message history.
+# Updated overall_state.py to use add_messages
 class OverallState(TypedDict):
     # مدخلات ومحادثة
-    messages: Annotated[List[Dict[str, Any]], operator.add]
+    # messages: Annotated[List[Dict[str, Any]], operator.add]
+
+    messages: Annotated[List[BaseMessage], add_messages]
     user_id: str
     user_query: Optional[str]
     
