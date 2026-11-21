@@ -20,6 +20,9 @@ class ChatResponse(BaseModel):
     response: str
     routed_to: str
     current_location: str | None = None
+    confidence: float | None = None
+    intent: str | None = None
+    is_egypt_scoped: bool | None = None
 
 @router.post("/chat", response_model=ChatResponse)
 def supervisor_chat(request: ChatRequest):
@@ -48,5 +51,8 @@ def supervisor_chat(request: ChatRequest):
     return ChatResponse(
         response=response_text,
         routed_to=routed_to,
-        current_location=final_state.get("current_location")
+        current_location=final_state.get("current_location"),
+        confidence=final_state.get("confidence"),
+        intent=final_state.get("intent"),
+        is_egypt_scoped=final_state.get("is_egypt_scoped"),
     )

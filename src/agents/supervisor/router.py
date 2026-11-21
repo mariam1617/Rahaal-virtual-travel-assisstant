@@ -143,7 +143,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     text = user_text.lower().strip()
     
     # 1. Geographic Exclusion (Non-Egypt destinations)
-    non_egypt_keywords = ["paris", "dubai", "tokyo", "london", "rome", "new york", "bali", "turkey", "spain", "france"]
+    non_egypt_keywords = ["paris", "dubai", "tokyo", "london", "rome", "new york", "bali", "turkey", "spain", "france", "italy", "greece", "japan", "morocco"]
     for kw in non_egypt_keywords:
         if kw in text:
             return SupervisorDecision(
@@ -153,17 +153,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
                 reasoning=f"User requested '{kw}', which is outside Egypt."
             )
 
-    # 2. Execution / Booking / Calendar
-    booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus"]
-    if any(bw in text for bw in booking_keywords):
-        return SupervisorDecision(
-            target="execution",
-            confidence=0.90,
-            is_egypt_scoped=True,
-            reasoning="User explicitly requested booking or calendar synchronization."
-        )
-
-    # 3. Feedback / Modifying plan (Checked before Planner so modifications aren't mistaken for new plans)
+    # 2. Feedback / Modifying plan
     feedback_keywords = ["change", "modify", "remove", "don't like", "update", "replace", "rating", "review"]
     if any(fw in text for fw in feedback_keywords):
         return SupervisorDecision(
@@ -173,8 +163,18 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
             reasoning="User requested changes to an active travel plan or provided feedback."
         )
 
+    # 3. Execution / Booking / Calendar
+    booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus", "hotel", "train to", "bus to"]
+    if any(bw in text for bw in booking_keywords):
+        return SupervisorDecision(
+            target="execution",
+            confidence=0.90,
+            is_egypt_scoped=True,
+            reasoning="User explicitly requested booking or calendar synchronization."
+        )
+
     # 4. Tourist Help / Visas / Emergencies / Nearby
-    help_keywords = ["visa", "emergency", "police", "embassy", "dress code", "scam", "tipping", "koshary", "near me", "nearby", "recommend", "sim card"]
+    help_keywords = ["visa", "emergency", "police", "embassy", "dress code", "scam", "tipping", "koshary", "near me", "nearby", "recommend", "sim card", "weather", "currency", "transport", "eat in", "cafes"]
     if any(hw in text for hw in help_keywords):
         return SupervisorDecision(
             target="tourist_help",
