@@ -42,6 +42,8 @@ class MemoryLoader:
     @staticmethod
     def get_user_profile(user_id: str) -> Optional[UserPreferences]:
         """استرجاع الملف الدائم للمستخدم وتحويله إلى Pydantic Model"""
+        from src.db.repositories.user_repo import SQLiteUserRepository
+
         repo = SQLiteUserRepository()
         data = repo.get_profile(user_id)
         if data is None:
@@ -66,6 +68,8 @@ class MemoryLoader:
     @staticmethod
     def save_user_preference(user_id: str, new_interests: list) -> bool:
         """تحديث تفضيلات المستخدم (للـ Long-Term Learning لاحقاً)"""
+        from src.db.repositories.user_repo import SQLiteUserRepository
+
         profile = MemoryLoader.get_user_profile(user_id)
         if profile is None:
             return False
