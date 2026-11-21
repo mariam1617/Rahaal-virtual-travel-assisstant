@@ -8,7 +8,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 import os
 import sqlite3
-from typing import Optional, List
+import json
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -95,7 +96,82 @@ class SQLiteUserRepository(IUserRepository):
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id);")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_profiles (
+                    user_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    nationality TEXT DEFAULT 'Egyptian',
+                    dietary_json TEXT DEFAULT '[]',
+                    budget_level TEXT DEFAULT 'moderate',
+                    interests_json TEXT DEFAULT '[]',
+                    accessibility_needs_json TEXT DEFAULT '[]',
+                    travel_habits_json TEXT DEFAULT '[]',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                );
+            """)
             conn.commit()
+
+    def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        if not user_id:
+            return None
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM user_profiles WHERE LOWER(user_id) = LOWER(?)",
+                (user_id.strip(),)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return self._profile_row_to_dict(row)
+
+    def upsert_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        user_id = str(profile["user_id"]).strip().lower()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_profiles (
+                    user_id, name, nationality, dietary_json, budget_level,
+                    interests_json, accessibility_needs_json, travel_habits_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    name = excluded.name,
+                    nationality = excluded.nationality,
+                    dietary_json = excluded.dietary_json,
+                    budget_level = excluded.budget_level,
+                    interests_json = excluded.interests_json,
+                    accessibility_needs_json = excluded.accessibility_needs_json,
+                    travel_habits_json = excluded.travel_habits_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    user_id,
+                    profile.get("name", "Traveler"),
+                    profile.get("nationality", "Egyptian"),
+                    json.dumps(profile.get("dietary", []), default=str),
+                    profile.get("budget_level", "moderate"),
+                    json.dumps(profile.get("interests", [])),
+                    json.dumps(profile.get("accessibility_needs", [])),
+                    json.dumps(profile.get("travel_habits", [])),
+                    datetime.now(timezone.utc).isoformat(),
+                )
+            )
+            conn.commit()
+        return self.get_profile(user_id) or profile
+
+    @staticmethod
+    def _profile_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "user_id": row["user_id"],
+            "name": row["name"],
+            "nationality": row["nationality"] or "Egyptian",
+            "dietary": json.loads(row["dietary_json"] or "[]"),
+            "budget_level": row["budget_level"] or "moderate",
+            "interests": json.loads(row["interests_json"] or "[]"),
+            "accessibility_needs": json.loads(row["accessibility_needs_json"] or "[]"),
+            "travel_habits": json.loads(row["travel_habits_json"] or "[]"),
+        }
 
     def create(self, user: UserRecord) -> UserRecord:
         """Inserts a new user record into SQLite."""

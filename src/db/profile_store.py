@@ -13,6 +13,8 @@ from src.state.schema import (
     ExtractedPreferences,
 )
 from src.state.memory import MOCK_USER_DB
+#UPDATE 21/11: ADDED A USER DB DATA/RA7AL.DB
+from src.db.repositories.user_repo import SQLiteUserRepository
 
 
 # In-memory vector index for user preference insights: user_id -> List[Dict]
@@ -37,26 +39,24 @@ class ProfileStore:
     @classmethod
     def get_user_profile(cls, user_id: str) -> Optional[UserPreferences]:
         """Fetches the user's persistent profile as a Pydantic model."""
-        data = MOCK_USER_DB.get(user_id)
-        if not data:
-            try:
-                from src.db.repositories.user_repo import SQLiteUserRepository
-                repo = cls.user_repo or SQLiteUserRepository()
-                repo_user = repo.get_by_user_id(user_id)
-                if repo_user:
-                    data = {
-                        "user_id": repo_user.user_id,
-                        "name": repo_user.name,
-                        "nationality": repo_user.nationality or "Egyptian",
-                        "dietary": [DietaryPreference.NONE],
-                        "budget_level": "moderate",
-                        "interests": [],
-                        "accessibility_needs": [],
-                        "travel_habits": [],
-                    }
-                    MOCK_USER_DB[user_id] = data
-            except Exception:
-                pass
+        repo = cls.user_repo or SQLiteUserRepository()
+        data = repo.get_profile(user_id)
+        if data is None:
+            repo_user = repo.get_by_user_id(user_id) or repo.get_by_username(user_id)
+            if repo_user:
+                data = {
+                    "user_id": repo_user.user_id,
+                    "name": repo_user.name,
+                    "nationality": repo_user.nationality or "Egyptian",
+                    "dietary": [DietaryPreference.NONE],
+                    "budget_level": "moderate",
+                    "interests": [],
+                    "accessibility_needs": [],
+                    "travel_habits": [],
+                }
+                data = repo.upsert_profile(data)
+        if data:
+            MOCK_USER_DB[user_id] = data
 
         if not data:
             return None
@@ -87,8 +87,10 @@ class ProfileStore:
             "accessibility_needs": [],
             "travel_habits": [],
         }
-        MOCK_USER_DB[user_id] = default_data
-        return UserPreferences(**default_data)
+        repo = cls.user_repo or SQLiteUserRepository()
+        data = repo.upsert_profile(default_data)
+        MOCK_USER_DB[user_id] = data
+        return UserPreferences(**data)
 
     @classmethod
     def update_user_preferences(
@@ -102,7 +104,10 @@ class ProfileStore:
         """
         # Ensure profile exists
         cls.ensure_user_profile(user_id)
-        user_entry = MOCK_USER_DB[user_id]
+        repo = cls.user_repo or SQLiteUserRepository()
+        user_entry = repo.get_profile(user_id)
+        if not user_entry:
+            user_entry = cls.ensure_user_profile(user_id).model_dump()
 
         # 1. Update Dietary Preferences
         if extracted.dietary:
@@ -140,6 +145,8 @@ class ProfileStore:
         for insight in extracted.insights:
             cls.store_insight_embedding(user_id, insight)
 
+        repo.upsert_profile(user_entry)
+        MOCK_USER_DB[user_id] = user_entry
         return cls.get_user_profile(user_id)
 
     @classmethod
