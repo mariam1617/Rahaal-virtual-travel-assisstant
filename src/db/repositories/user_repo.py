@@ -5,7 +5,7 @@ Module: src/db/repositories/user_repo.py
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import sqlite3
 from typing import Optional, List
@@ -113,7 +113,7 @@ class SQLiteUserRepository(IUserRepository):
                     user.email.strip().lower() if user.email else None,
                     user.hashed_password,
                     user.nationality.strip() if user.nationality else "Egyptian",
-                    user.created_at or datetime.utcnow().isoformat(),
+                    user.created_at or datetime.now(timezone.utc).isoformat(),
                 )
             )
             conn.commit()

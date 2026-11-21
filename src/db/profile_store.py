@@ -32,6 +32,7 @@ class ProfileStore:
     Manages persistent storage, retrieval, and vector search of user profiles
     and long-term travel preferences.
     """
+    user_repo = None
 
     @classmethod
     def get_user_profile(cls, user_id: str) -> Optional[UserPreferences]:
@@ -40,7 +41,8 @@ class ProfileStore:
         if not data:
             try:
                 from src.db.repositories.user_repo import SQLiteUserRepository
-                repo_user = SQLiteUserRepository().get_by_user_id(user_id)
+                repo = cls.user_repo or SQLiteUserRepository()
+                repo_user = repo.get_by_user_id(user_id)
                 if repo_user:
                     data = {
                         "user_id": repo_user.user_id,
