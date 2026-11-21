@@ -690,10 +690,16 @@ def handle_prompt(prompt, user):
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    recent_messages = []
+    for message in st.session_state.messages[-3:]:
+        role = "assistant" if message["role"] == "assistant" else "user"
+        recent_messages.append((role, message["content"]))
+
     state = {
         "user_id": user["user_id"],
         "session_id": st.session_state.session_id,
-        "messages": [("user", prompt)],
+        "messages": recent_messages,
+        "curr_location": st.session_state.get("curr_location"),
         "current_intent": "unclassified",
     }
 

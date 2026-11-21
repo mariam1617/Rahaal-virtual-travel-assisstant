@@ -44,6 +44,26 @@ def test_supervisor_decision_schema_invalid_confidence():
         )
 
 
+def test_fallback_classifier_does_not_match_substrings():
+    assert heuristic_fallback_classifier("Please explain this trip").target == "profiling"
+    assert heuristic_fallback_classifier("Tell me about the planet").target == "profiling"
+    assert heuristic_fallback_classifier("What is on the balcony?").target == "profiling"
+
+
+def test_supervisor_router_short_circuits_empty_input(monkeypatch):
+    def fail_if_called():
+        raise AssertionError("LLM should not be called for empty input")
+
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        fail_if_called,
+    )
+    result = supervisor_router_node({"messages": [("user", "   ")]})
+
+    assert result["next_agent"] == "profiling"
+    assert result["confidence"] == 0.0
+
+
 # ---------------------------------------------------------
 # 2. Benchmark Classifier Tests (Across All Intent Categories)
 # ---------------------------------------------------------

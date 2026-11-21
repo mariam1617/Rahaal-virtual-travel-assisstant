@@ -15,6 +15,7 @@ class SupervisorState(TypedDict, total=False):
     context_warning: NotRequired[str]
     needs_profiling: NotRequired[bool]
     current_location: NotRequired[str]
+    curr_location: NotRequired[str]
     location_details: NotRequired[Dict[str, Any]]
     next_agent: NotRequired[str]
     intent: NotRequired[str]

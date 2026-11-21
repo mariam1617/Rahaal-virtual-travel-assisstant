@@ -70,6 +70,7 @@ OUT_OF_SCOPE_RESPONSE = (
 # =========================================================================
 
 import os
+import re
 from typing import Optional
 
 CONFIDENCE_THRESHOLD = float(os.getenv("ROUTER_CONFIDENCE_THRESHOLD", "0.65"))
@@ -111,7 +112,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     # 1. Geographic Exclusion (Non-Egypt destinations)
     non_egypt_keywords = ["paris", "dubai", "tokyo", "london", "rome", "new york", "bali", "turkey", "spain", "france", "italy", "greece", "japan", "morocco"]
     for kw in non_egypt_keywords:
-        if kw in text:
+        if re.search(rf"\b{re.escape(kw)}\b", text):
             return SupervisorDecision(
                 target="out_of_scope",
                 confidence=1.0,
@@ -121,7 +122,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
 
     # 2. Feedback / Modifying plan
     feedback_keywords = ["change", "modify", "remove", "don't like", "update", "replace", "rating", "review"]
-    if any(fw in text for fw in feedback_keywords):
+    if any(re.search(rf"\b{re.escape(fw)}\b", text) for fw in feedback_keywords):
         return SupervisorDecision(
             target="feedback",
             confidence=0.85,
@@ -131,7 +132,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
 
     # 3. Execution / Booking / Calendar
     booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus", "hotel", "train to", "bus to"]
-    if any(bw in text for bw in booking_keywords):
+    if any(re.search(rf"\b{re.escape(bw)}\b", text) for bw in booking_keywords):
         return SupervisorDecision(
             target="execution",
             confidence=0.90,
@@ -141,7 +142,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
 
     # 4. Tourist Help / Visas / Emergencies / Nearby
     help_keywords = ["visa", "emergency", "police", "embassy", "dress code", "scam", "tipping", "koshary", "near me", "nearby", "recommend", "sim card", "weather", "currency", "transport", "eat in", "cafes"]
-    if any(hw in text for hw in help_keywords):
+    if any(re.search(rf"\b{re.escape(hw)}\b", text) for hw in help_keywords):
         return SupervisorDecision(
             target="tourist_help",
             confidence=0.88,
@@ -151,7 +152,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
 
     # 5. Planner (New Itinerary Generation)
     planner_keywords = ["itinerary", "plan", "days in", "day trip", "visit cairo", "visit luxor", "aswan", "alexandria", "schedule", "budget for"]
-    if any(pw in text for pw in planner_keywords):
+    if any(re.search(rf"\b{re.escape(pw)}\b", text) for pw in planner_keywords):
         return SupervisorDecision(
             target="planner",
             confidence=0.92,
@@ -168,6 +169,28 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     )
 
 
+def _message_text(message: Any) -> str:
+    if isinstance(message, tuple) and len(message) >= 2:
+        return str(message[1])
+    if isinstance(message, dict):
+        return str(message.get("content", message.get("text", "")))
+    if hasattr(message, "content"):
+        return str(message.content)
+    return str(message)
+
+
+def _message_role(message: Any) -> str:
+    if isinstance(message, tuple) and len(message) >= 1:
+        return str(message[0])
+    if isinstance(message, dict):
+        role = message.get("role")
+        if role:
+            return str(role)
+    if hasattr(message, "type"):
+        return str(message.type)
+    return "message"
+
+
 def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     """
     Supervisor Router Node.
@@ -175,17 +198,45 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     and applies confidence gating.
     """
     messages = state.get("messages", [])
-    if not messages:
-        user_prompt = "Hello"
-    else:
-        last_msg = messages[-1]
-        # Support tuple ('user', text), string, or LangChain BaseMessage
-        if isinstance(last_msg, tuple):
-            user_prompt = last_msg[1]
-        elif hasattr(last_msg, "content"):
-            user_prompt = last_msg.content
-        else:
-            user_prompt = str(last_msg)
+    recent_messages = messages[-3:] if messages else []
+    user_prompt = _message_text(recent_messages[-1]).strip() if recent_messages else ""
+
+    if not user_prompt:
+        decision = SupervisorDecision(
+            target="profiling",
+            confidence=0.0,
+            is_egypt_scoped=True,
+            reasoning="No user text was provided.",
+        )
+        return {
+            "next_agent": "profiling",
+            "intent": decision.reasoning,
+            "routing_reason": "Empty or whitespace-only input; routing to profiling.",
+            "confidence": decision.confidence,
+            "is_egypt_scoped": decision.is_egypt_scoped,
+        }
+
+    recent_context = "\n".join(
+        f"{_message_role(message)}: {_message_text(message).strip()}"
+        for message in recent_messages
+        if _message_text(message).strip()
+    )
+
+    context_lines = []
+    preferences = state.get("user_preferences")
+    if preferences is not None:
+        context_lines.append(
+            "Hydrated user_preferences: "
+            + (
+                preferences.model_dump_json(exclude_none=True)
+                if hasattr(preferences, "model_dump_json")
+                else str(preferences)
+            )
+        )
+    location = state.get("curr_location") or state.get("current_location")
+    if location:
+        context_lines.append(f"Current location: {location}")
+    hydrated_context = "\n".join(context_lines)
 
     decision: Optional[SupervisorDecision] = None
     llm = get_router_llm()
@@ -194,7 +245,11 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
         try:
             structured_llm = llm.with_structured_output(SupervisorDecision)
             system_msg = SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT)
-            user_msg = HumanMessage(content=f"User Request: {user_prompt}")
+            prompt_parts = ["Recent conversation:\n" + recent_context]
+            if hydrated_context:
+                prompt_parts.append(hydrated_context)
+            prompt_parts.append(f"Current User Request: {user_prompt}")
+            user_msg = HumanMessage(content="\n\n".join(prompt_parts))
             decision = structured_llm.invoke([system_msg, user_msg])
         except Exception as e:
             print(f"[Supervisor] LLM invocation failed, using fallback: {e}")
