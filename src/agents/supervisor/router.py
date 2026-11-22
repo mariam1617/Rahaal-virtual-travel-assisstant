@@ -121,6 +121,10 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     Deterministic backup classifier used if LLM API is unavailable or in offline testing.
     Guarantees robust routing under zero network connectivity.
     """
+    # TODO (Problem 9): Substring keyword matching misfires.
+    # Check all keyword lists and regex patterns to ensure whole-word boundaries (\b) are strictly used,
+    # and that intent classification prevents collisions (e.g. "scam" should route advice queries to
+    # advisories, not emergency; "eat" should not match substrings in other words).
     text = user_text.lower().strip()
     
     # 1. Geographic Exclusion (Non-Egypt destinations)

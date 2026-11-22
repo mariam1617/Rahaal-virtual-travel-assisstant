@@ -6,6 +6,15 @@ def reverse_geocode(lat: float, lon: float) -> LocationResponse:
     """
     Calls the OpenMap reverse-geocoding API to convert coordinates into a structured location.
     """
+    # TODO (Problem 5): A geocoding failure currently leaks into user answers.
+    # 1. On error, reverse_geocode returns formatted_address="Location unavailable", which leaks into downstream
+    #    nodes causing them to print "Emergency Assistance for Location unavailable".
+    # 2. On success, the raw long display_name becomes the location. Need structured fields:
+    #    governorate (address.state), neighborhood, country code, lat/lon.
+    # 3. Add 'accept-language': 'en' to headers/params for consistent English localization.
+    # 4. Add a valid contact email in the User-Agent header (required by OpenStreetMap/Nominatim usage policy).
+    # 5. Add a local cache of successful lookups indexed by rounded coordinates (e.g. round to 3 decimal places)
+    #    because the public Nominatim server expects low request rates (max 1 req/sec).
     url = "https://nominatim.openstreetmap.org/reverse"
     
     # OpenStreetMap/Nominatim uses format=json. 

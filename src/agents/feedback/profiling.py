@@ -37,6 +37,8 @@ def extract_constraints_from_text(text: str) -> Dict[str, Any]:
     day_match = re.search(r"\b(\d+)\s*(?:-| )*(?:day|days|night|nights)\b", lower_text)
     if day_match:
         extracted["duration_days"] = int(day_match.group(1))
+    # TODO (Problem 16): Substring matching causes "weekend" to become 7 days because "week" matches inside "weekend".
+    # Use whole word matching (r"\bweek\b") and explicitly handle "weekend" (typically 2-3 days).
     elif "week" in lower_text:
         extracted["duration_days"] = 7
 
@@ -115,6 +117,10 @@ def update_session_preferences(state: Dict[str, Any], user_answers: Dict[str, An
 
     req_data.update(user_answers)
     
+    # TODO (Problem 16): Profiling never asks for a destination because update_session_preferences
+    # defaults it to "Cairo". Because destination is always set to "Cairo", detect_missing_constraints
+    # can never detect that destination was missing from the user's request.
+    # Do not set a premature default destination here if the user hasn't specified one.
     # Ensure destination has default if none
     destination = req_data.get("destination", "Cairo")
     
@@ -188,6 +194,10 @@ def profiling_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     full_response = f"{PROFILING_GREETING_PROMPT}{clarifying}"
     ai_msg = AIMessage(content=full_response)
 
+    # TODO (Problem 16): Profiling ends the graph even when everything is collected.
+    # When all constraints are collected (needs_profiling == False), the profiling agent should hand off
+    # to the planner (e.g. target_subgraph="planner" or next_agent="draft_generator"), so the itinerary
+    # is actually planned instead of terminating the graph immediately with profiling_completed.
     return {
         **res,
         "messages": [ai_msg],

@@ -13,10 +13,13 @@ from src.state.schema import (
     ExtractedPreferences,
 )
 from src.state.memory import MOCK_USER_DB
-#UPDATE 21/11: ADDED A USER DB DATA/RA7AL.DB
+# UPDATE 21/11: ADDED A USER DB DATA/RA7AL.DB
 from src.db.repositories.user_repo import SQLiteUserRepository
 
-
+# TODO (Problem 4): USER_INSIGHTS_STORE is an in-memory dictionary that is lost on restart,
+# while the user profile is stored persistently in SQLite. Persist insights into SQLite or a persistent vector table.
+# Also, search_user_insights depends on the non-semantic hash pseudo-embedding in compute_insight_embedding;
+# verify if anything calls search_user_insights, and delete or replace with semantic embeddings if unused.
 # In-memory vector index for user preference insights: user_id -> List[Dict]
 USER_INSIGHTS_STORE: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -34,16 +37,25 @@ class ProfileStore:
     Manages persistent storage, retrieval, and vector search of user profiles
     and long-term travel preferences.
     """
+    # TODO (Problem 2): Profile logic exists three times (ProfileStore, MemoryLoader, SQLiteUserRepository).
+    # ProfileStore.get_user_profile and MemoryLoader.get_user_profile are copies, and there are three write paths
+    # (update_user_preferences, save_user_preference, upsert_profile). Reading also creates a profile as a side effect.
+    # Collapse this into one ProfileService on top of SQLiteUserRepository, with separate get and ensure methods,
+    # and delete MOCK_USER_DB (confirm nothing reads it first).
     user_repo = None
 
     @classmethod
     def get_user_profile(cls, user_id: str) -> Optional[UserPreferences]:
         """Fetches the user's persistent profile as a Pydantic model."""
+        # TODO (Problem 13): Ensure anonymous or unauthenticated users are not mapped to a shared profile.
         repo = cls.user_repo or SQLiteUserRepository()
         data = repo.get_profile(user_id)
         if data is None:
             repo_user = repo.get_by_user_id(user_id) or repo.get_by_username(user_id)
             if repo_user:
+                # TODO (Problem 1): Unknown nationality defaults to "Egyptian". A foreign tourist with no stated nationality
+                # would be told they need no visa (Plan Step 2.5) and affects foreigner vs Egyptian ticket tiers.
+                # Make nationality Optional[str] = None and ask when a nationality-dependent question arises.
                 data = {
                     "user_id": repo_user.user_id,
                     "name": repo_user.name,
@@ -60,6 +72,8 @@ class ProfileStore:
 
         if not data:
             return None
+        # TODO (Problem 3): travel_habits is stored in the DB, but UserPreferences has no such field,
+        # so habits are dropped on every read. Also support a like/avoid split for interests.
         return UserPreferences(
             user_id=data["user_id"],
             name=data.get("name", "Traveler"),
@@ -77,6 +91,8 @@ class ProfileStore:
         if profile:
             return profile
 
+        # TODO (Problem 1): Defaulting unknown nationality to 'Egyptian' creates incorrect visa advice
+        # and ticket tier pricing for foreign travelers. Make nationality Optional[str] = None.
         default_data = {
             "user_id": user_id,
             "name": name,
@@ -102,6 +118,9 @@ class ProfileStore:
         Persistently updates the user's Long-Term Memory (LTM) profile with
         newly learned dietary rules, interests, budget tier, habits, and accessibility.
         """
+        # TODO (Problem 4): Preferences can currently only grow because update_user_preferences
+        # only unions sets (set.update). "I'm not vegan anymore" or "I don't like museums" can never
+        # remove or invert anything. Support deletion, negation, and like/avoid polarity.
         # Ensure profile exists
         cls.ensure_user_profile(user_id)
         repo = cls.user_repo or SQLiteUserRepository()

@@ -12,8 +12,16 @@ def emergency_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LangGraph node: queries EmergencyDB and drafts candidate emergency instructions.
     Passes output to the Help Verification Guardrail Node.
     """
+    # TODO (Problem 5): If reverse_geocode returned "Location unavailable", it leaks into
+    # the response as "🚨 Emergency Assistance for Location unavailable:". Sanitize location fallback.
     location = state.get("current_location") or "Egypt"
+    if location == "Location unavailable":
+        location = "Egypt"
 
+    # TODO (Problem 8): Tourist Help has no real retrieval.
+    # emergency, advisories and recommendations each hardcode both the "retrieved chunks" and the "candidate answer".
+    # The user's actual question is never used to retrieve relevant documents from EmergencyDB or a vector index.
+    # The verifier downstream then simply checks candidate text against context that was hardcoded and copied from it.
     # Context ground truth for verification node
     retrieved_chunks = [
         "Tourist Police (شرطة السياحة): 126 (Nationwide assistance for international tourists, harassment, scams).",

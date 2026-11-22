@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 from src.state.schema import UserPreferences
 
 
+# TODO (Problem 6): Two state definitions (SupervisorState and OverallState) exist across the codebase.
+# SupervisorState lacks keys present in OverallState (e.g. constraint_errors, repair_attempts, feedback fields),
+# leading to fragmentation. Consolidate into one unified AppState (TypedDict, total=False)
+# with add_messages reducer only on `messages`, and remove redundant state classes.
 class SupervisorState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: NotRequired[str]

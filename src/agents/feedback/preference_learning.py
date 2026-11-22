@@ -28,6 +28,10 @@ def compute_insight_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[float
     Compatible with cosine similarity and vector store indexing without
     requiring external network calls or heavy deep learning runtime overhead in test suites.
     """
+    # TODO (Problem 14): The embeddings aren't semantic.
+    # compute_insight_embedding uses a hashed bag of n-grams (SHA-256 % dim), which lacks true semantic geometry;
+    # therefore synonyms like "vegan" and "plant-based" produce near-orthogonal vectors and never match.
+    # Replace with real text embedding models (e.g. text-embedding-004 or sentence-transformers) for production.
     clean_text = text.lower().strip()
     if not clean_text:
         return [0.0] * dim
@@ -180,6 +184,11 @@ def extract_preference_insights(text: str) -> ExtractedPreferences:
         ))
 
     # 4. Interests & Activity Passions
+    # TODO (Problem 12): Preferences can be saved backwards.
+    # Input like "I don't like museums, remove it" stores "museums" as an active interest because there
+    # is no negation detection and no like/avoid polarity in the schema.
+    # Implement negation parsing (e.g. "don't like", "avoid", "hate", "no") and split interests into
+    # `liked_interests` vs `avoided_interests` (or add an `avoid` polarity flag).
     interest_keywords = {
         "historical sites": ["historical", "ancient", "temple", "pharaoh", "pyramid", "ruins"],
         "museums": ["museum", "antiquities", "exhibits", "artifacts"],
@@ -276,6 +285,8 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     from src.db.profile_store import ProfileStore
 
+    # TODO (Problem 13): All users share one profile because anonymous or unauthenticated users
+    # default to user_id = "test_user". Use session-scoped ephemeral profiles for guests or enforce auth.
     user_id = state.get("user_id") or "test_user"
 
     # Hydrate ExtractedPreferences object
@@ -312,6 +323,12 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if fb_type == "both":
         # Compound intent: preference saved, proceed to modify the itinerary
+        # TODO (Problem 11): The "both" feedback path is broken.
+        # ltm_preference_update_node appends its AI confirmation message to `messages`.
+        # When itinerary_modifier_node runs next, it reads `messages[-1]` and ends up parsing
+        # "✅ Saved your preference..." as the user's request.
+        # Either pass the original user request explicitly (e.g. in `state["user_query"]` or `modification_intent`)
+        # or have the modifier filter messages for the last HumanMessage.
         next_node = "itinerary_modifier"
         confirm_msg = (
             f"✅ Saved your preference for **{summary_phrase}** to your travel profile. "

@@ -104,6 +104,12 @@ def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     Overwrites raw coordinates with the formatted `current_location` string.
     """
+    # TODO (Problem 5): A geocoding failure leaks into user answers.
+    # reverse_geocode returns formatted_address="Location unavailable" on error, and this node writes that
+    # into current_location. Downstream emergency and recommendation nodes then print
+    # "Emergency Assistance for Location unavailable".
+    # Handle error cases gracefully (e.g. set current_location to None or fallback to "Egypt"),
+    # and provide structured fields: governorate (state/province), neighborhood, country code, lat/lon.
     coords = extract_coordinates(state)
     
     if coords is None:
@@ -143,6 +149,12 @@ def parse_tourist_intent(user_text: str) -> str:
     - 'plan_trip': Full itinerary planning.
     - 'fallback': Ambiguous or unclassified requests.
     """
+    # TODO (Problem 9): Substring keyword matching misfires!
+    # Using `any(k in text ...)` means:
+    # - "eat" matches "great" (redirecting to recommendations)
+    # - "bus" matches "business" (redirecting to advisories)
+    # - "scam" in "common scams to avoid" incorrectly sends advice queries to emergency.
+    # Replace substring matching with regex whole-word boundaries (rf"\b{re.escape(k)}\b") or intent classification.
     text = user_text.lower().strip()
 
     # 1. Emergency Assistance (Story 2.2)
@@ -173,6 +185,10 @@ def intent_parser_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LangGraph node: extracts the user query, classifies the sub-intent,
     and updates both `current_intent` and `help_domain` in state.
     """
+    # TODO (Problem 10): Stale intent bug.
+    # intent_parser_node returns early if current_intent is already in state, and reads user_query first.
+    # On a multi-turn conversation or second turn, the old intent or stale query wins, ignoring the latest user message.
+    # Always extract the latest user message from state["messages"][-1] rather than reusing stale current_intent/user_query.
     current_intent = state.get("current_intent") or state.get("help_domain")
     if current_intent and current_intent not in ["unclassified", "unknown", "None", "general"]:
         return {
