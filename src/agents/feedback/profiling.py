@@ -162,7 +162,8 @@ def profiling_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
         ai_msg = AIMessage(content=clarifying_question)
         return {
             **state,
-            "messages": state.get("messages", []) + [ai_msg],
+            # "messages": state.get("messages", []) + [ai_msg],
+            "messages": [ai_msg],
             "response": clarifying_question,
             "missing_constraints": missing,
             "needs_profiling": True,
@@ -189,7 +190,7 @@ def profiling_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         **res,
-        "messages": state.get("messages", []) + [ai_msg],
+        "messages": [ai_msg],
         "response": full_response,
         "next_agent": "profiling_completed"
     }

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 
 # --- 1. تفضيلات المستخدم الدائمة (Long-Term Preferences) ---
@@ -38,3 +38,41 @@ class GeneratedPlan(BaseModel):
     title: Optional[str] = None
     days: List[ItineraryDay] = Field(default_factory=list)
     status: str = "draft"  # draft, validated, approved, booked
+
+# --- 3. بيانات التغذية الراجعة والذاكرة طويلة المدى (Feedback & Learning) ---
+FeedbackType = Literal["trip_adjustment", "long_term_preference", "both", "unknown"]
+
+class FeedbackClassification(BaseModel):
+    feedback_type: FeedbackType = "unknown"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reasoning: str = ""
+    modification_intent: Optional[str] = None
+    preference_intent: Optional[str] = None
+
+class UserInsight(BaseModel):
+    insight_type: str  # dietary, travel_habit, budget_level, interest, accessibility
+    key: str
+    value: Any
+    tags: List[str] = Field(default_factory=list)
+    raw_text: str = ""
+    confidence: float = 1.0
+    embedding: Optional[List[float]] = None
+
+class ExtractedPreferences(BaseModel):
+    dietary: List[DietaryPreference] = Field(default_factory=list)
+    interests: List[str] = Field(default_factory=list)
+    budget_level: Optional[str] = None
+    accessibility_needs: List[str] = Field(default_factory=list)
+    travel_habits: List[str] = Field(default_factory=list)
+    insights: List[UserInsight] = Field(default_factory=list)
+
+class PlanModification(BaseModel):
+    action: Literal["replace", "remove", "add", "reschedule", "general"] = "replace"
+    day_number: Optional[int] = 1
+    time_slot: Optional[str] = None  # morning, afternoon, evening
+    target_place_or_activity: Optional[str] = None
+    replacement_name: Optional[str] = None
+    replacement_category: Optional[str] = None
+    estimated_cost_usd: Optional[float] = None
+    notes: Optional[str] = None
+

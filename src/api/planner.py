@@ -32,17 +32,33 @@ def create_plan(request: PlannerRequest) -> PlannerResponse:
             "advanced_repair_attempts": 0,
             "errors": [],
             "constraint_errors": [],
-        }
+        },
+        config={"configurable": {"thread_id": f"planner-{request.destination}-{request.duration_days}"}},
     )
     plan = result.get("current_plan")
+    interrupted = bool(result.get("__interrupt__"))
+    response = (
+        "Your itinerary is ready for review and explicit approval before execution."
+        if interrupted
+        else result.get("response", "")
+    )
     return PlannerResponse(
         plan=plan.model_dump() if plan else {},
         is_constraint_valid=result.get("is_constraint_valid", False),
         is_advanced_valid=result.get("is_advanced_valid", False),
-        is_executable=result.get("is_executable", False),
+        is_executable=result.get("is_executable", False) and not interrupted,
         evaluation=result.get("evaluation", {}),
-        response=result.get("response", ""),
+        response=response,
         temporal_errors=result.get("temporal_errors", []),
         accessibility_errors=result.get("accessibility_errors", []),
         errors=result.get("advanced_errors", []) + result.get("constraint_errors", []),
+        approval_required=interrupted,
+        approval_status=result.get("approval_status", "pending"),
+        booking_status="blocked" if interrupted else "not_started",
+        booking_attempts=0,
+        bookings=[],
+        booking_errors=[],
+        calendar_status="not_started",
+        calendar_events=[],
+        calendar_errors=[],
     )

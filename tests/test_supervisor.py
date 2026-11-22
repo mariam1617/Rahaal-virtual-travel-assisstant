@@ -2,6 +2,8 @@
 Unit & Benchmark Tests for Supervisor Request Routing (Story 1.2 / Dev 4)
 """
 
+import sqlite3
+
 import pytest
 from pydantic import ValidationError
 from langchain_core.messages import HumanMessage
@@ -12,9 +14,9 @@ from src.agents.supervisor.router import (
     supervisor_conditional_edge,
     out_of_scope_responder_node,
     heuristic_fallback_classifier,
-    create_supervisor_graph,
     OUT_OF_SCOPE_RESPONSE,
 )
+from src.agents.supervisor.graph import create_supervisor_graph
 from src.agents.feedback.profiling import PROFILING_GREETING_PROMPT
 from src.agents.supervisor.context import hydrate_context_node, route_context
 
@@ -42,6 +44,26 @@ def test_supervisor_decision_schema_invalid_confidence():
             is_egypt_scoped=True,
             reasoning="Invalid confidence test"
         )
+
+
+def test_fallback_classifier_does_not_match_substrings():
+    assert heuristic_fallback_classifier("Please explain this trip").target == "profiling"
+    assert heuristic_fallback_classifier("Tell me about the planet").target == "profiling"
+    assert heuristic_fallback_classifier("What is on the balcony?").target == "profiling"
+
+
+def test_supervisor_router_short_circuits_empty_input(monkeypatch):
+    def fail_if_called():
+        raise AssertionError("LLM should not be called for empty input")
+
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        fail_if_called,
+    )
+    result = supervisor_router_node({"messages": [("user", "   ")]})
+
+    assert result["next_agent"] == "profiling"
+    assert result["confidence"] == 0.0
 
 
 # ---------------------------------------------------------
@@ -99,10 +121,11 @@ def test_conditional_edge_out_of_scope():
 
 
 def test_conditional_edge_low_confidence_fallback():
-    # Confidence 0.50 is below threshold 0.65 -> routes to profiling fallback
+    # The router node owns low-confidence fallback and stores profiling as next_agent.
     state = {
         "messages": [("user", "Somewhere nice")],
-        "next_agent": "planner",
+        "next_agent": "profiling",
+        # "next_agent": "planner",
         "is_egypt_scoped": True,
         "confidence": 0.50
     }
@@ -117,6 +140,63 @@ def test_conditional_edge_valid_subgraph():
         "confidence": 0.95
     }
     assert supervisor_conditional_edge(state) == "planner"
+
+
+def test_supervisor_router_records_low_confidence_adjustment(monkeypatch):
+    monkeypatch.setenv("ROUTER_CONFIDENCE_THRESHOLD", "0.65")
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        lambda: None,
+    )
+
+    result = supervisor_router_node({
+        "messages": [("user", "Hello")],
+    })
+
+    assert result["next_agent"] == "profiling"
+    assert "Low confidence" in result["routing_reason"]
+
+
+def test_supervisor_router_ignores_assistant_reply(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        lambda: None,
+    )
+
+    result = supervisor_router_node({
+        "messages": [
+            ("user", "Plan a 4-day romantic vacation to Paris"),
+            ("assistant", "Here is your proposed Paris itinerary."),
+        ],
+    })
+
+    assert result["next_agent"] == "out_of_scope"
+
+
+def test_supervisor_hard_handoff_cap_returns_finish():
+    result = supervisor_router_node({
+        "messages": [("user", "Plan a trip")],
+        "completed_steps": ["planner"],
+        "handoff_count": 4,
+        "max_handoff_count": 4,
+    })
+
+    assert result["next_agent"] == "FINISH"
+
+
+def test_supervisor_does_not_repeat_completed_subgraph(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        lambda: None,
+    )
+    result = supervisor_router_node({
+        "messages": [("user", "Plan a 3-day Cairo itinerary")],
+        "completed_steps": ["planner"],
+        "handoff_count": 1,
+        "max_handoff_count": 4,
+    })
+
+    assert result["next_agent"] == "FINISH"
 
 
 def test_context_hydration_known_user():
@@ -136,6 +216,25 @@ def test_context_hydration_unknown_user_routes_to_profiling():
     assert result["context_loaded"] is False
     assert result["needs_profiling"] is True
     assert "No profile found" in result["context_warning"]
+    assert route_context(result) == "profiling"
+
+
+def test_context_hydration_database_error_routes_to_profiling(monkeypatch):
+    """Verify profile database failures are converted into a context warning."""
+
+    def raise_database_error(_user_id):
+        raise sqlite3.OperationalError("database unavailable")
+
+    monkeypatch.setattr(
+        "src.agents.supervisor.context.MemoryLoader.get_user_profile",
+        raise_database_error,
+    )
+
+    result = hydrate_context_node({"user_id": "user_101"})
+
+    assert result["context_loaded"] is False
+    assert result["needs_profiling"] is True
+    assert "database or connection error" in result["context_warning"]
     assert route_context(result) == "profiling"
 
 

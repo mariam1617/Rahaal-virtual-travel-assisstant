@@ -2,52 +2,19 @@
 Supervisor Request Routing Engine (Story 1.2 / Dev 4)
 Item 1: Supervisor Prompt Engineering & Intent Definition
 """
+#UPDATE 21/11: 
+# Added SupervisorState as a TypedDict .
+# Added add_messages for LangGraph-managed message history.
+# Changed StateGraph(dict) to StateGraph(SupervisorState).
+# Removed manual message concatenation in the supervisor out-of-scope and profiling nodes.
+# Updated overall_state.py to use add_messages
 
-from typing import Literal
-from pydantic import BaseModel, Field
-
-# The target subgraphs and outcomes recognized by the Supervisor
-TargetSubgraph = Literal[
-    "planner",       # Multi-day itineraries, custom tour plans, activity scheduling
-    "tourist_help",  # Visas, emergency numbers, local transport rules, nearby recommendations
-    "execution",     # Booking flights/buses/trains, calendar syncing
-    "feedback",      # Modifying existing confirmed plans, rating past activities
-    "profiling",     # Onboarding, gathering preferences, handling vague/ambiguous intents
-    "out_of_scope"   # Requests outside Egypt or non-travel queries
-]
+from typing import  Any, Dict
+from pydantic import  Field
+from langchain_core.messages import AIMessage,  HumanMessage, SystemMessage
+from src.agents.supervisor.state import SupervisorState, SupervisorDecision, TargetSubgraph
 
 
-class SupervisorDecision(BaseModel):
-    """Structured output for the Supervisor Router Agent decision."""
-    target: TargetSubgraph = Field(
-        ...,
-        description=(
-            "The designated target subgraph for the user query: "
-            "'planner' for planning/itineraries, "
-            "'tourist_help' for immediate help/visas/emergency/local spots, "
-            "'execution' for booking/calendar, "
-            "'feedback' for itinerary adjustments/feedback, "
-            "'profiling' for ambiguous/vague input needing interview, "
-            "'out_of_scope' for non-Egypt travel or prohibited queries."
-        )
-    )
-    confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score of the intent classification from 0.0 to 1.0."
-    )
-    is_egypt_scoped: bool = Field(
-        ...,
-        description=(
-            "True if the query pertains to travel within or to Egypt (or is a general greeting). "
-            "False if the user requests travel to other countries (e.g. Paris, Tokyo, Dubai)."
-        )
-    )
-    reasoning: str = Field(
-        ...,
-        description="Concise rationale explaining the classification and scope verification."
-    )
 
 
 SUPERVISOR_SYSTEM_PROMPT = """You are the Supervisor Router for "Ra7al" (رحال), an Egypt-exclusive AI Travel Concierge.
@@ -88,6 +55,10 @@ Your mission is to accurately parse the user's travel request, strictly enforce 
 6. "out_of_scope":
    - Non-Egypt travel requests or non-travel queries (e.g., coding, math, general chat).
 
+7. "FINISH":
+   - Use this only when a previous subgraph completed the request or no more subgraph handoffs are needed.
+   - Never repeat a subgraph that appears in completed_steps.
+
 Output your decision strictly adhering to the SupervisorDecision schema.
 """
 
@@ -103,10 +74,35 @@ OUT_OF_SCOPE_RESPONSE = (
 # =========================================================================
 
 import os
-from typing import Dict, Any, Optional
-from langchain_core.messages import HumanMessage, SystemMessage
+import re
+import logging
+from functools import lru_cache
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 CONFIDENCE_THRESHOLD = float(os.getenv("ROUTER_CONFIDENCE_THRESHOLD", "0.65"))
+
+
+@lru_cache(maxsize=4)
+def _create_router_llm(gemini_key: Optional[str], openai_key: Optional[str], model_name: str):
+    if gemini_key:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=gemini_key,
+            temperature=0.0,
+        )
+    if openai_key:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=openai_key,
+            temperature=0.0,
+        )
+    return None
 
 
 def get_router_llm():
@@ -116,23 +112,8 @@ def get_router_llm():
     """
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
-    default_model = os.getenv("DEFAULT_MODEL", "gemini-1.5-flash")
-
-    if gemini_key:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=default_model,
-            google_api_key=gemini_key,
-            temperature=0.0
-        )
-    elif openai_key:
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model="gpt-4o-mini",
-            api_key=openai_key,
-            temperature=0.0
-        )
-    return None
+    model_name = os.getenv("DEFAULT_MODEL", DEFAULT_GEMINI_MODEL)
+    return _create_router_llm(gemini_key, openai_key, model_name)
 
 
 def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
@@ -143,9 +124,9 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     text = user_text.lower().strip()
     
     # 1. Geographic Exclusion (Non-Egypt destinations)
-    non_egypt_keywords = ["paris", "dubai", "tokyo", "london", "rome", "new york", "bali", "turkey", "spain", "france"]
+    non_egypt_keywords = ["paris", "dubai", "tokyo", "london", "rome", "new york", "bali", "turkey", "spain", "france", "italy", "greece", "japan", "morocco"]
     for kw in non_egypt_keywords:
-        if kw in text:
+        if re.search(rf"\b{re.escape(kw)}\b", text):
             return SupervisorDecision(
                 target="out_of_scope",
                 confidence=1.0,
@@ -153,19 +134,9 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
                 reasoning=f"User requested '{kw}', which is outside Egypt."
             )
 
-    # 2. Execution / Booking / Calendar
-    booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus"]
-    if any(bw in text for bw in booking_keywords):
-        return SupervisorDecision(
-            target="execution",
-            confidence=0.90,
-            is_egypt_scoped=True,
-            reasoning="User explicitly requested booking or calendar synchronization."
-        )
-
-    # 3. Feedback / Modifying plan (Checked before Planner so modifications aren't mistaken for new plans)
+    # 2. Feedback / Modifying plan
     feedback_keywords = ["change", "modify", "remove", "don't like", "update", "replace", "rating", "review"]
-    if any(fw in text for fw in feedback_keywords):
+    if any(re.search(rf"\b{re.escape(fw)}\b", text) for fw in feedback_keywords):
         return SupervisorDecision(
             target="feedback",
             confidence=0.85,
@@ -173,9 +144,19 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
             reasoning="User requested changes to an active travel plan or provided feedback."
         )
 
+    # 3. Execution / Booking / Calendar
+    booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus", "hotel", "train to", "bus to"]
+    if any(re.search(rf"\b{re.escape(bw)}\b", text) for bw in booking_keywords):
+        return SupervisorDecision(
+            target="execution",
+            confidence=0.90,
+            is_egypt_scoped=True,
+            reasoning="User explicitly requested booking or calendar synchronization."
+        )
+
     # 4. Tourist Help / Visas / Emergencies / Nearby
-    help_keywords = ["visa", "emergency", "police", "embassy", "dress code", "scam", "tipping", "koshary", "near me", "nearby", "recommend", "sim card"]
-    if any(hw in text for hw in help_keywords):
+    help_keywords = ["visa", "emergency", "police", "embassy", "dress code", "scam", "tipping", "koshary", "near me", "nearby", "recommend", "sim card", "weather", "currency", "transport", "eat in", "cafes"]
+    if any(re.search(rf"\b{re.escape(hw)}\b", text) for hw in help_keywords):
         return SupervisorDecision(
             target="tourist_help",
             confidence=0.88,
@@ -185,7 +166,7 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
 
     # 5. Planner (New Itinerary Generation)
     planner_keywords = ["itinerary", "plan", "days in", "day trip", "visit cairo", "visit luxor", "aswan", "alexandria", "schedule", "budget for"]
-    if any(pw in text for pw in planner_keywords):
+    if any(re.search(rf"\b{re.escape(pw)}\b", text) for pw in planner_keywords):
         return SupervisorDecision(
             target="planner",
             confidence=0.92,
@@ -202,24 +183,112 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
     )
 
 
-def supervisor_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def _message_text(message: Any) -> str:
+    if isinstance(message, tuple) and len(message) >= 2:
+        return str(message[1])
+    if isinstance(message, dict):
+        return str(message.get("content", message.get("text", "")))
+    if hasattr(message, "content"):
+        return str(message.content)
+    return str(message)
+
+
+def _message_role(message: Any) -> str:
+    if isinstance(message, tuple) and len(message) >= 1:
+        return str(message[0])
+    if isinstance(message, dict):
+        role = message.get("role")
+        if role:
+            return str(role)
+        message_type = message.get("type")
+        if message_type:
+            return str(message_type)
+    if hasattr(message, "type"):
+        return str(message.type)
+    return "message"
+
+
+def _is_human_message(message: Any) -> bool:
+    if isinstance(message, HumanMessage):
+        return True
+    return _message_role(message).strip().lower() in {"human", "user"}
+
+
+def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     """
     Supervisor Router Node.
     Parses initial requests, maps them to primary subgraphs using structured output,
     and applies confidence gating.
     """
     messages = state.get("messages", [])
-    if not messages:
-        user_prompt = "Hello"
-    else:
-        last_msg = messages[-1]
-        # Support tuple ('user', text), string, or LangChain BaseMessage
-        if isinstance(last_msg, tuple):
-            user_prompt = last_msg[1]
-        elif hasattr(last_msg, "content"):
-            user_prompt = last_msg.content
-        else:
-            user_prompt = str(last_msg)
+    recent_messages = messages[-3:] if messages else []
+    user_prompt = next(
+        (
+            _message_text(message).strip()
+            for message in reversed(messages)
+            if _is_human_message(message) and _message_text(message).strip()
+        ),
+        "",
+    )
+
+    if not user_prompt:
+        decision = SupervisorDecision(
+            target="profiling",
+            confidence=0.0,
+            is_egypt_scoped=True,
+            reasoning="No user text was provided.",
+        )
+        return {
+            "next_agent": "profiling",
+            "intent": decision.reasoning,
+            "routing_reason": "Empty or whitespace-only input; routing to profiling.",
+            "confidence": decision.confidence,
+            "is_egypt_scoped": decision.is_egypt_scoped,
+        }
+
+    recent_context = "\n".join(
+        f"{_message_role(message)}: {_message_text(message).strip()}"
+        for message in recent_messages
+        if _message_text(message).strip()
+    )
+
+    completed_steps = list(state.get("completed_steps", []))
+    handoff_count = int(state.get("handoff_count", 0))
+    max_handoff_count = int(state.get("max_handoff_count", 4))
+    if handoff_count >= max_handoff_count:
+        return {
+            "next_agent": "FINISH",
+            "intent": "Maximum subgraph handoff count reached.",
+            "routing_reason": (
+                f"Hard loop cap reached at {handoff_count}/{max_handoff_count} "
+                "handoffs; stopping routing."
+            ),
+            "confidence": 1.0,
+            "is_egypt_scoped": state.get("is_egypt_scoped", True),
+            "completed_steps": completed_steps,
+        }
+
+    context_lines = []
+    preferences = state.get("user_preferences")
+    if preferences is not None:
+        context_lines.append(
+            "Hydrated user_preferences: "
+            + (
+                preferences.model_dump_json(exclude_none=True)
+                if hasattr(preferences, "model_dump_json")
+                else str(preferences)
+            )
+        )
+    location = state.get("curr_location") or state.get("current_location")
+    if location:
+        context_lines.append(f"Current location: {location}")
+    context_lines.append(
+        f"Completed subgraphs: {', '.join(completed_steps) if completed_steps else 'none'}"
+    )
+    context_lines.append(
+        f"Handoff count: {handoff_count}/{max_handoff_count}"
+    )
+    hydrated_context = "\n".join(context_lines)
 
     decision: Optional[SupervisorDecision] = None
     llm = get_router_llm()
@@ -228,28 +297,53 @@ def supervisor_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
         try:
             structured_llm = llm.with_structured_output(SupervisorDecision)
             system_msg = SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT)
-            user_msg = HumanMessage(content=f"User Request: {user_prompt}")
+            prompt_parts = ["Recent conversation:\n" + recent_context]
+            if hydrated_context:
+                prompt_parts.append(hydrated_context)
+            prompt_parts.append(f"Current User Request: {user_prompt}")
+            user_msg = HumanMessage(content="\n\n".join(prompt_parts))
             decision = structured_llm.invoke([system_msg, user_msg])
-        except Exception as e:
-            print(f"[Supervisor] LLM invocation failed, using fallback: {e}")
+        except Exception:
+            logger.warning(
+                "Supervisor LLM invocation failed; using heuristic fallback",
+                exc_info=True,
+                extra={
+                    "user_id": state.get("user_id"),
+                    "thread_id": state.get("session_id"),
+                },
+            )
             decision = heuristic_fallback_classifier(user_prompt)
     else:
         decision = heuristic_fallback_classifier(user_prompt)
 
-    # Enforce confidence threshold & fallback
+    # Enforce confidence threshold and geography once, here.
     selected_target: TargetSubgraph = decision.target
+    routing_adjustment = ""
     if decision.target != "out_of_scope" and decision.confidence < CONFIDENCE_THRESHOLD:
         selected_target = "profiling"
-        decision.reasoning += f" (Low confidence {decision.confidence:.2f} < threshold {CONFIDENCE_THRESHOLD}. Fallback to profiling.)"
+        routing_adjustment = (
+            f"Low confidence {decision.confidence:.2f} < threshold "
+            f"{CONFIDENCE_THRESHOLD:.2f}; routed to profiling."
+        )
 
     # Enforce geographic exclusion
     if not decision.is_egypt_scoped:
         selected_target = "out_of_scope"
+        routing_adjustment = "Destination or query is outside the Egypt-only scope."
+
+    if (
+        selected_target in ("planner", "tourist_help", "execution", "feedback")
+        and selected_target in completed_steps
+    ):
+        selected_target = "FINISH"
+        routing_adjustment = (
+            f"Subgraph '{decision.target}' already completed; stopping to prevent a loop."
+        )
 
     return {
-        **state,
         "next_agent": selected_target,
         "intent": decision.reasoning,
+        "routing_reason": routing_adjustment or f"Routed to {selected_target}.",
         "confidence": decision.confidence,
         "is_egypt_scoped": decision.is_egypt_scoped
     }
@@ -259,40 +353,30 @@ def supervisor_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
 # Item 3: Conditional Fallback Edge & Out-of-Scope Responder Node
 # =========================================================================
 
-from langchain_core.messages import AIMessage
 
 
-def supervisor_conditional_edge(state: Dict[str, Any]) -> str:
-     
+
+def supervisor_conditional_edge(state: SupervisorState) -> str:
     target = state.get("next_agent", "profiling")
-    is_egypt = state.get("is_egypt_scoped", True)
-    confidence = state.get("confidence", 1.0)
-
-    # 1. Geographic Boundary Gate
-    if not is_egypt or target == "out_of_scope":
+    if target == "FINISH":
+        return "FINISH"
+    if target == "out_of_scope":
         return "out_of_scope"
-
-    # 2. Confidence Fallback Gate (routes ambiguous/low-confidence queries to Profiling Agent)
-    if confidence < CONFIDENCE_THRESHOLD or target == "profiling":
+    if target == "profiling":
         return "profiling"
-
-    # 3. Valid Primary Subgraph Routes
     if target in ["planner", "tourist_help", "execution", "feedback"]:
         return target
-
-    # Default safe fallback
     return "profiling"
 
 
-def out_of_scope_responder_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def out_of_scope_responder_node(state: SupervisorState) -> Dict[str, Any]:
     """
     Handles out-of-scope queries by returning a courteous refusal explaining
     Ra7al's Egypt-exclusive mission.
     """
     ai_msg = AIMessage(content=OUT_OF_SCOPE_RESPONSE)
     return {
-        **state,
-        "messages": state.get("messages", []) + [ai_msg],
+        "messages": [ai_msg],
         "response": OUT_OF_SCOPE_RESPONSE,
         "rejection_reason": state.get("intent", "Destination outside Egypt."),
         "next_agent": "END",
@@ -301,50 +385,7 @@ def out_of_scope_responder_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def create_supervisor_graph():
-    """
-    Build and compile the Supervisor LangGraph workflow with conditional routing
-    and fallback edges.
-    """
-    from langgraph.graph import StateGraph, START, END
-    from src.agents.feedback.profiling import profiling_agent_node
-    from src.agents.supervisor.context import hydrate_context_node, route_context
-    from src.agents.tourist_help.intent_resolver import resolve_location_node
 
-    workflow = StateGraph(dict)
-
-    # 1. Add nodes
-    workflow.add_node("supervisor", supervisor_router_node)
-    workflow.add_node("out_of_scope", out_of_scope_responder_node)
-    workflow.add_node("profiling", profiling_agent_node)
-
-    workflow.add_node("resolve_location", resolve_location_node)
-    workflow.add_node("hydrate_context", hydrate_context_node)
-
-    # 2. Add edges & conditional routing
-    workflow.add_edge(START, "resolve_location")
-    workflow.add_edge("resolve_location", "hydrate_context")
-    workflow.add_conditional_edges(
-        "hydrate_context",
-        route_context,
-        {"supervisor": "supervisor", "profiling": "profiling"},
-    )
-    workflow.add_conditional_edges(
-        "supervisor",
-        supervisor_conditional_edge,
-        {
-            "out_of_scope": "out_of_scope",
-            "profiling": "profiling",
-            "planner": END,
-            "tourist_help": END,
-            "execution": END,
-            "feedback": END,
-        }
-    )
-    workflow.add_edge("out_of_scope", END)
-    workflow.add_edge("profiling", END)
-
-    return workflow.compile()
 
 
 

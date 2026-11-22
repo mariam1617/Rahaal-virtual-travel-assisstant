@@ -5,6 +5,8 @@ from src.config import settings
 from src.api.supervisor import router as supervisor_router
 from src.api.tourist_help import router as tourist_help_router
 from src.api.planner import router as planner_router
+from src.api.feedback import router as feedback_router
+from src.api.auth import router as auth_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,3 +39,5 @@ def health_check():
 app.include_router(supervisor_router, prefix="/api/v1")
 app.include_router(tourist_help_router, prefix="/api/v1")
 app.include_router(planner_router, prefix="/api/v1")
+app.include_router(feedback_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
