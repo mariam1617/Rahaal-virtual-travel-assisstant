@@ -14,7 +14,20 @@ def hydrate_context_node(state: SupervisorState) -> Dict[str, Any]:
     if not user_id:
         return {**state, "context_loaded": False}
 
-    profile = MemoryLoader.get_user_profile(user_id)
+    try:
+        profile = MemoryLoader.get_user_profile(user_id)
+    except Exception:
+        return {
+            **state,
+            "context_loaded": False,
+            "context_warning": (
+                f"Unable to load profile for user '{user_id}' due to a "
+                "database or connection error."
+            ),
+            "needs_profiling": True,
+            "next_agent": "profiling",
+        }
+
     if profile is None:
         return {
             **state,

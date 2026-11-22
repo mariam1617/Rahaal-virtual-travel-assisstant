@@ -2,6 +2,8 @@
 Unit & Benchmark Tests for Supervisor Request Routing (Story 1.2 / Dev 4)
 """
 
+import sqlite3
+
 import pytest
 from pydantic import ValidationError
 from langchain_core.messages import HumanMessage
@@ -198,6 +200,25 @@ def test_context_hydration_unknown_user_routes_to_profiling():
     assert result["context_loaded"] is False
     assert result["needs_profiling"] is True
     assert "No profile found" in result["context_warning"]
+    assert route_context(result) == "profiling"
+
+
+def test_context_hydration_database_error_routes_to_profiling(monkeypatch):
+    """Verify profile database failures are converted into a context warning."""
+
+    def raise_database_error(_user_id):
+        raise sqlite3.OperationalError("database unavailable")
+
+    monkeypatch.setattr(
+        "src.agents.supervisor.context.MemoryLoader.get_user_profile",
+        raise_database_error,
+    )
+
+    result = hydrate_context_node({"user_id": "user_101"})
+
+    assert result["context_loaded"] is False
+    assert result["needs_profiling"] is True
+    assert "database or connection error" in result["context_warning"]
     assert route_context(result) == "profiling"
 
 
