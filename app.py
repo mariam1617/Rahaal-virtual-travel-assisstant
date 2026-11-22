@@ -709,9 +709,11 @@ def handle_prompt(prompt, user):
         try:
             with st.spinner("Ra7al is identifying the best specialist..."):
                 final_state = get_supervisor().invoke(state)
-            route = final_state.get("next_agent", "profiling")
+            route = final_state.get("target_subgraph") or final_state.get("next_agent", "profiling")
             confidence = final_state.get("confidence")
-            specialist_response = dispatch_specialist(route, prompt, state)
+            specialist_response = final_state.get("response")
+            if specialist_response is None:
+                specialist_response = dispatch_specialist(route, prompt, state)
         except Exception:
             logger.exception("Request failed")
             specialist_response = "Sorry, something went wrong while handling that request. Please try again."

@@ -55,6 +55,10 @@ Your mission is to accurately parse the user's travel request, strictly enforce 
 6. "out_of_scope":
    - Non-Egypt travel requests or non-travel queries (e.g., coding, math, general chat).
 
+7. "FINISH":
+   - Use this only when a previous subgraph completed the request or no more subgraph handoffs are needed.
+   - Never repeat a subgraph that appears in completed_steps.
+
 Output your decision strictly adhering to the SupervisorDecision schema.
 """
 
@@ -232,6 +236,22 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
         if _message_text(message).strip()
     )
 
+    completed_steps = list(state.get("completed_steps", []))
+    handoff_count = int(state.get("handoff_count", 0))
+    max_handoff_count = int(state.get("max_handoff_count", 4))
+    if handoff_count >= max_handoff_count:
+        return {
+            "next_agent": "FINISH",
+            "intent": "Maximum subgraph handoff count reached.",
+            "routing_reason": (
+                f"Hard loop cap reached at {handoff_count}/{max_handoff_count} "
+                "handoffs; stopping routing."
+            ),
+            "confidence": 1.0,
+            "is_egypt_scoped": state.get("is_egypt_scoped", True),
+            "completed_steps": completed_steps,
+        }
+
     context_lines = []
     preferences = state.get("user_preferences")
     if preferences is not None:
@@ -246,6 +266,12 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     location = state.get("curr_location") or state.get("current_location")
     if location:
         context_lines.append(f"Current location: {location}")
+    context_lines.append(
+        f"Completed subgraphs: {', '.join(completed_steps) if completed_steps else 'none'}"
+    )
+    context_lines.append(
+        f"Handoff count: {handoff_count}/{max_handoff_count}"
+    )
     hydrated_context = "\n".join(context_lines)
 
     decision: Optional[SupervisorDecision] = None
@@ -289,6 +315,15 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
         selected_target = "out_of_scope"
         routing_adjustment = "Destination or query is outside the Egypt-only scope."
 
+    if (
+        selected_target in ("planner", "tourist_help", "execution", "feedback")
+        and selected_target in completed_steps
+    ):
+        selected_target = "FINISH"
+        routing_adjustment = (
+            f"Subgraph '{decision.target}' already completed; stopping to prevent a loop."
+        )
+
     return {
         "next_agent": selected_target,
         "intent": decision.reasoning,
@@ -307,6 +342,8 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
 
 def supervisor_conditional_edge(state: SupervisorState) -> str:
     target = state.get("next_agent", "profiling")
+    if target == "FINISH":
+        return "FINISH"
     if target == "out_of_scope":
         return "out_of_scope"
     if target == "profiling":

@@ -12,9 +12,9 @@ from src.agents.supervisor.router import (
     supervisor_conditional_edge,
     out_of_scope_responder_node,
     heuristic_fallback_classifier,
-    create_supervisor_graph,
     OUT_OF_SCOPE_RESPONSE,
 )
+from src.agents.supervisor.graph import create_supervisor_graph
 from src.agents.feedback.profiling import PROFILING_GREETING_PROMPT
 from src.agents.supervisor.context import hydrate_context_node, route_context
 
@@ -153,6 +153,32 @@ def test_supervisor_router_records_low_confidence_adjustment(monkeypatch):
 
     assert result["next_agent"] == "profiling"
     assert "Low confidence" in result["routing_reason"]
+
+
+def test_supervisor_hard_handoff_cap_returns_finish():
+    result = supervisor_router_node({
+        "messages": [("user", "Plan a trip")],
+        "completed_steps": ["planner"],
+        "handoff_count": 4,
+        "max_handoff_count": 4,
+    })
+
+    assert result["next_agent"] == "FINISH"
+
+
+def test_supervisor_does_not_repeat_completed_subgraph(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        lambda: None,
+    )
+    result = supervisor_router_node({
+        "messages": [("user", "Plan a 3-day Cairo itinerary")],
+        "completed_steps": ["planner"],
+        "handoff_count": 1,
+        "max_handoff_count": 4,
+    })
+
+    assert result["next_agent"] == "FINISH"
 
 
 def test_context_hydration_known_user():

@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Dict, Literal, Optional,NotRequired
+from typing import Annotated, Any, Dict, List, Literal, Optional, NotRequired
 from typing_extensions import TypedDict
 from langchain_core.messages import  BaseMessage
 from langgraph.graph.message import add_messages
@@ -18,12 +18,18 @@ class SupervisorState(TypedDict, total=False):
     curr_location: NotRequired[str]
     location_details: NotRequired[Dict[str, Any]]
     next_agent: NotRequired[str]
+    target_subgraph: NotRequired[str]
     intent: NotRequired[str]
     routing_reason: NotRequired[str] #UPDATED 21/11: Added routing_reason to SupervisorState for better traceability of routing decisions.
     confidence: NotRequired[float]
     is_egypt_scoped: NotRequired[bool]
     response: NotRequired[str]
     rejection_reason: NotRequired[str]
+    completed_steps: NotRequired[List[str]]
+    handoff_count: NotRequired[int]
+    max_handoff_count: NotRequired[int]
+    current_plan: NotRequired[Any]
+    trip_requirements: NotRequired[Any]
 
 # The target subgraphs and outcomes recognized by the Supervisor
 TargetSubgraph = Literal[
@@ -32,7 +38,8 @@ TargetSubgraph = Literal[
     "execution",     # Booking flights/buses/trains, calendar syncing
     "feedback",      # Modifying existing confirmed plans, rating past activities
     "profiling",     # Onboarding, gathering preferences, handling vague/ambiguous intents
-    "out_of_scope"   # Requests outside Egypt or non-travel queries
+    "out_of_scope",  # Requests outside Egypt or non-travel queries
+    "FINISH"         # Supervisor explicitly satisfied; stop the graph
 ]
 
 
@@ -47,7 +54,8 @@ class SupervisorDecision(BaseModel):
             "'execution' for booking/calendar, "
             "'feedback' for itinerary adjustments/feedback, "
             "'profiling' for ambiguous/vague input needing interview, "
-            "'out_of_scope' for non-Egypt travel or prohibited queries."
+            "'out_of_scope' for non-Egypt travel or prohibited queries, "
+            "'FINISH' when the request is satisfied or no further subgraph is needed."
         )
     )
     confidence: float = Field(
