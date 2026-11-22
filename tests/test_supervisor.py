@@ -157,6 +157,22 @@ def test_supervisor_router_records_low_confidence_adjustment(monkeypatch):
     assert "Low confidence" in result["routing_reason"]
 
 
+def test_supervisor_router_ignores_assistant_reply(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.supervisor.router.get_router_llm",
+        lambda: None,
+    )
+
+    result = supervisor_router_node({
+        "messages": [
+            ("user", "Plan a 4-day romantic vacation to Paris"),
+            ("assistant", "Here is your proposed Paris itinerary."),
+        ],
+    })
+
+    assert result["next_agent"] == "out_of_scope"
+
+
 def test_supervisor_hard_handoff_cap_returns_finish():
     result = supervisor_router_node({
         "messages": [("user", "Plan a trip")],

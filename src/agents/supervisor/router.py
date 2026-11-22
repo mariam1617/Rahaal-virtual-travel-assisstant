@@ -200,9 +200,18 @@ def _message_role(message: Any) -> str:
         role = message.get("role")
         if role:
             return str(role)
+        message_type = message.get("type")
+        if message_type:
+            return str(message_type)
     if hasattr(message, "type"):
         return str(message.type)
     return "message"
+
+
+def _is_human_message(message: Any) -> bool:
+    if isinstance(message, HumanMessage):
+        return True
+    return _message_role(message).strip().lower() in {"human", "user"}
 
 
 def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
@@ -213,7 +222,14 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
     """
     messages = state.get("messages", [])
     recent_messages = messages[-3:] if messages else []
-    user_prompt = _message_text(recent_messages[-1]).strip() if recent_messages else ""
+    user_prompt = next(
+        (
+            _message_text(message).strip()
+            for message in reversed(messages)
+            if _is_human_message(message) and _message_text(message).strip()
+        ),
+        "",
+    )
 
     if not user_prompt:
         decision = SupervisorDecision(
