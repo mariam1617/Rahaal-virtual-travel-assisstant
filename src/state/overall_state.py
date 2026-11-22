@@ -3,9 +3,16 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 import operator
 from src.state.schema import UserPreferences, TripRequirements, GeneratedPlan
-#UPDATE 21/11: 
+# UPDATE 21/11: 
 # Added add_messages for LangGraph-managed message history.
 # Updated overall_state.py to use add_messages
+# TODO (Problem 6): Two conflicting state definitions exist: OverallState and SupervisorState.
+# The graph uses SupervisorState, which lacks several keys that OverallState has (e.g. detailed planner/feedback/booking fields),
+# and vice versa. Furthermore, OverallState uses `operator.add` reducers on constraint_errors, errors,
+# booking_errors, and calendar_errors. If that were the active schema, the planner repair loop would accumulate
+# errors across iterations and could never clear resolved errors.
+# Consolidate into a single unified `AppState (TypedDict, total=False)` across the entire system,
+# and use reducers ONLY for messages (via add_messages).
 class OverallState(TypedDict):
     # مدخلات ومحادثة
     # messages: Annotated[List[Dict[str, Any]], operator.add]

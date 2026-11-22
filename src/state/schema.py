@@ -12,9 +12,17 @@ class DietaryPreference(str, Enum):
 class UserPreferences(BaseModel):
     user_id: str
     name: str
-    nationality: str
+    # TODO (Problem 1): Unknown nationality currently defaults to a fixed string ("Egyptian" or "unknown").
+    # Make it Optional[str] = None instead of assuming Egyptian nationality. Once visa advice uses
+    # user_preferences.nationality (plan step 2.5), a foreign tourist with no stated nationality would
+    # incorrectly be told they need no visa. It also affects foreigner vs Egyptian ticket pricing tiers.
+    # Ask when a nationality-dependent question comes up.
+    nationality: Optional[str] = None
     dietary: List[DietaryPreference] = Field(default_factory=list)
     budget_level: str = "moderate"  # budget, moderate, luxury
+    # TODO (Problem 3): Split interests into like/avoid categories (e.g. liked_interests vs avoided_interests)
+    # and add travel_habits: List[str] = Field(default_factory=list). Currently travel_habits are saved
+    # to the DB but UserPreferences drops them on every read because the field is missing.
     interests: List[str] = Field(default_factory=list) # e.g., ["historical", "nature", "cafes"]
     accessibility_needs: Optional[List[str]] = Field(default_factory=list)
 

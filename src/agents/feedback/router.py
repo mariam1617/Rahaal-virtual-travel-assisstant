@@ -35,6 +35,8 @@ Your mission is to classify user feedback or change requests into one of three p
 Output your decision strictly matching the FeedbackClassification schema.
 """
 
+# TODO (Problem 17): CONFIDENCE_THRESHOLD is defined here but never actually used in feedback_router_node.
+# Apply confidence gating: if decision.confidence < CONFIDENCE_THRESHOLD, route to fallback or ask clarifying question.
 CONFIDENCE_THRESHOLD = float(os.getenv("FEEDBACK_ROUTER_THRESHOLD", "0.65"))
 
 
@@ -175,6 +177,8 @@ def feedback_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         decision = heuristic_feedback_classifier(user_prompt)
 
+    # TODO (Problem 17): Enforce CONFIDENCE_THRESHOLD here. If decision.confidence < CONFIDENCE_THRESHOLD,
+    # route to feedback_fallback or profiling rather than blindly executing low-confidence decisions.
     # Map decision to next_agent
     if decision.feedback_type == "trip_adjustment":
         next_agent = "itinerary_modifier"

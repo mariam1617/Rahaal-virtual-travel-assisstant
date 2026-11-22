@@ -12,6 +12,11 @@ def advisories_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LangGraph node: queries TouristRAG for visa and advisory rules.
     Passes output to the Help Verification Guardrail Node.
     """
+    # TODO (Problem 8): Tourist Help has no real retrieval.
+    # Advisories hardcodes both the 'retrieved chunks' and the 'candidate answer'.
+    # The user's question is never used (e.g. nationality-specific visa rules or transit questions),
+    # so every question gets the identical hardcoded response.
+    # Wire to actual vector store or knowledge base retriever querying user_preferences.nationality and user_query.
     # Context ground truth for verification node
     retrieved_chunks = [
         "Egypt e-Visa: Official electronic visa issued to citizens of listed countries (including US, EU, UK, Canada, and Japan).",

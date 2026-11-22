@@ -24,6 +24,9 @@ class UserRecord(BaseModel):
     name: str
     email: Optional[str] = None
     hashed_password: str
+    # TODO (Problem 1): Unknown nationality defaults to "Egyptian". Foreign tourists should have
+    # nationality: Optional[str] = None rather than defaulting to "Egyptian" so that visa checks and ticket
+    # pricing logic do not treat foreign tourists as Egyptian nationals by default.
     nationality: str = "Egyptian"
     created_at: Optional[str] = None
 

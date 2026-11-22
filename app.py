@@ -622,6 +622,11 @@ def render_approval_panel():
     pending = st.session_state.pending_approval
     if not pending:
         return
+    # TODO (Problem 7): Human-in-the-loop approval workflow disconnects:
+    # 1. Resuming planner_app with Command(resume=...) requires a shared checkpointer thread across supervisor and planner.
+    # 2. Approval returns next_agent: "execution_pending", which is not automatically forwarded to execution_app.
+    # 3. Rejection terminates flow without prompting the user for desired changes or rerouting to feedback subgraph.
+    # 4. Ensure approval is pinned to a specific plan_id / version so stale approvals do not apply after plan edits.
     with st.container(border=True, key="approval"):
         html('<div class="eyebrow" style="color:#A8841A">Action required</div>')
         st.markdown("## Review your itinerary")

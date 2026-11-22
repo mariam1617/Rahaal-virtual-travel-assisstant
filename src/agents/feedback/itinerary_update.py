@@ -141,6 +141,9 @@ def parse_modification_request(prompt: str, current_plan: Optional[GeneratedPlan
     text = prompt.lower().strip()
 
     # 1. Day Extraction
+    # TODO (Problem 15): The modifier invents things: defaults to Day 1 when no day is specified.
+    # If the user says "Change dinner to an Italian restaurant", it arbitrarily modifies Day 1 dinner
+    # instead of checking active context or asking the user which day they wish to modify.
     day_match = re.search(r"\bday\s*(\d+)\b", text)
     day_num = int(day_match.group(1)) if day_match else 1
     if current_plan and current_plan.days:
@@ -209,6 +212,9 @@ def parse_modification_request(prompt: str, current_plan: Optional[GeneratedPlan
             clean_name = to_with_match.group(1).strip()
             replacement_name = clean_name.title()
         else:
+            # TODO (Problem 15): The modifier invents things: creates arbitrary "Custom: ..." places
+            # with hardcoded $15.0 cost and hardcodes accessibility: ["wheelchair access", "step-free"].
+            # Should look up verified Egypt places or validate accessibility attributes properly.
             clean_prompt = re.sub(r"^(please\s+|can we\s+|i want to\s+|change\s+|modify\s+)", "", text).strip()
             replacement_name = f"Custom: {clean_prompt.title()}"
         replacement_category = "dining" if time_slot == "evening" else "activity"
@@ -265,6 +271,9 @@ def apply_modification_to_plan(
                     replace_idx = i
                     break
 
+            # TODO (Problem 15): The modifier invents things: when target activity doesn't match anything,
+            # it defaults to replacing the last activity (replace_idx = len(day.activities) - 1).
+            # If target cannot be found, it should ask the user for clarification rather than silently overwriting.
             if replace_idx is None and day.activities:
                 replace_idx = len(day.activities) - 1
 
@@ -391,6 +400,9 @@ def validate_plan_through_planner_loops(
     budget_valid, budget_err, total_cost, overage = validate_budget(plan, max_budget)
     logistics_valid, logistics_errs = validate_logistics(plan)
 
+    # TODO (Problem 15): The modifier claims to run planner validation loops, but it only ever calls
+    # repair_budget_violations. It does not attempt to repair temporal collisions, opening-hour mismatches,
+    # or accessibility violations. Implement full multi-constraint repair loops.
     # If budget violation and repairable, attempt repair
     if not budget_valid and overage > 0:
         plan = repair_budget_violations(plan, max_budget, overage)
@@ -455,6 +467,10 @@ def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # Extract user prompt
+    # TODO (Problem 11): The "both" feedback path is broken.
+    # Here messages[-1] is read. In the compound "both" flow, ltm_preference_update_node just executed and appended
+    # an AIMessage ("✅ Saved your preference..."). Consequently, messages[-1] is that AI confirmation,
+    # NOT the user's modification request! Filter messages for the last HumanMessage or user message tuple.
     messages = state.get("messages", [])
     user_prompt = ""
     if messages:
