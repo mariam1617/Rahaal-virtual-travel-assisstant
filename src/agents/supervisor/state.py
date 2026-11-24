@@ -1,39 +1,10 @@
-from typing import Annotated, Any, Dict, List, Literal, Optional, NotRequired
-from typing_extensions import TypedDict
-from langchain_core.messages import  BaseMessage
-from langgraph.graph.message import add_messages
+from typing import Literal
 from pydantic import BaseModel, Field
-from src.state.schema import UserPreferences
 
+from src.state.app_state import AppState
 
-# TODO (Problem 6): Two state definitions (SupervisorState and OverallState) exist across the codebase.
-# SupervisorState lacks keys present in OverallState (e.g. constraint_errors, repair_attempts, feedback fields),
-# leading to fragmentation. Consolidate into one unified AppState (TypedDict, total=False)
-# with add_messages reducer only on `messages`, and remove redundant state classes.
-class SupervisorState(TypedDict, total=False):
-    messages: Annotated[list[BaseMessage], add_messages]
-    user_id: NotRequired[str]
-    user_query: NotRequired[str]
-    user_preferences: NotRequired[UserPreferences]
-    context_loaded: NotRequired[bool]
-    context_warning: NotRequired[str]
-    needs_profiling: NotRequired[bool]
-    current_location: NotRequired[str]
-    curr_location: NotRequired[str]
-    location_details: NotRequired[Dict[str, Any]]
-    next_agent: NotRequired[str]
-    target_subgraph: NotRequired[str]
-    intent: NotRequired[str]
-    routing_reason: NotRequired[str] #UPDATED 21/11: Added routing_reason to SupervisorState for better traceability of routing decisions.
-    confidence: NotRequired[float]
-    is_egypt_scoped: NotRequired[bool]
-    response: NotRequired[str]
-    rejection_reason: NotRequired[str]
-    completed_steps: NotRequired[List[str]]
-    handoff_count: NotRequired[int]
-    max_handoff_count: NotRequired[int]
-    current_plan: NotRequired[Any]
-    trip_requirements: NotRequired[Any]
+SupervisorState = AppState  # DEPRECATED alias
+
 
 # The target subgraphs and outcomes recognized by the Supervisor
 TargetSubgraph = Literal[

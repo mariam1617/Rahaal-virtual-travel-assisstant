@@ -10,10 +10,12 @@ from .schema import (
     ExtractedPreferences,
     PlanModification,
 )
+from .app_state import AppState
 from .overall_state import OverallState
 from .memory import MemoryLoader, MOCK_USER_DB
 
 __all__ = [
+    "AppState",
     "UserPreferences",
     "TripRequirements",
     "GeneratedPlan",

@@ -4,11 +4,10 @@
 
 from typing import Any, Dict
 from src.state.memory import MemoryLoader
-from src.agents.supervisor.router import SupervisorState
+from src.state.app_state import AppState
 
-# def hydrate_context_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
-def hydrate_context_node(state: SupervisorState) -> Dict[str, Any]:
+def hydrate_context_node(state: AppState) -> Dict[str, Any]:
     """Load known user preferences and preserve request/session context."""
     # TODO (Problem 13): All users share one profile if user_id falls back to a common test_user.
     # Ensure guest/anonymous sessions do not overwrite each other or share persistent profiles.

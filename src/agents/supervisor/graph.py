@@ -7,7 +7,7 @@ from src.agents.supervisor.router import (
     supervisor_conditional_edge,
     supervisor_router_node,
 )
-from src.agents.supervisor.state import SupervisorState
+from src.state.app_state import AppState
 from src.agents.tourist_help.intent_resolver import resolve_location_node
 def create_supervisor_graph():
     """
@@ -19,7 +19,7 @@ def create_supervisor_graph():
     # from src.agents.supervisor.context import hydrate_context_node, route_context
     # from src.agents.tourist_help.intent_resolver import resolve_location_node
 
-    workflow = StateGraph(SupervisorState)
+    workflow = StateGraph(AppState)
 
     def run_subgraph(name, app):
         def wrapper(state):
