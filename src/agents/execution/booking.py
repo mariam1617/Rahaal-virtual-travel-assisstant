@@ -65,7 +65,6 @@ def search_booking_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Book planned items only with approval, retrying transient failures."""
     if state.get("approval_status") != "approved":
         return {
-            **state,
             "booking_status": "blocked",
             "booking_attempts": 0,
             "bookings": [],
@@ -79,7 +78,6 @@ def search_booking_node(state: Dict[str, Any]) -> Dict[str, Any]:
     items = _booking_items(state)
     if not items:
         return {
-            **state,
             "booking_status": "failed",
             "booking_attempts": int(state.get("booking_attempts", 0)) + 1,
             "bookings": [],
@@ -129,11 +127,13 @@ def search_booking_node(state: Dict[str, Any]) -> Dict[str, Any]:
     attempts = max(int(state.get("booking_attempts", 0)), highest_attempts)
     if not errors:
         plan = state.get("current_plan")
-        if isinstance(plan, GeneratedPlan):
-            plan.status = "booked"
+        updated_plan = (
+            plan.model_copy(update={"status": "booked"})
+            if isinstance(plan, GeneratedPlan)
+            else plan
+        )
         return {
-            **state,
-            "current_plan": plan,
+            "current_plan": updated_plan,
             "booking_status": "confirmed",
             "booking_attempts": attempts,
             "bookings": bookings,
@@ -142,7 +142,6 @@ def search_booking_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     return {
-        **state,
         "booking_status": "failed",
         "booking_attempts": attempts,
         "bookings": bookings,
@@ -158,7 +157,6 @@ def booking_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "No further booking actions are being attempted."
     )
     return {
-        **state,
         "booking_status": "failed",
         "booking_errors": state.get("booking_errors", []) or ["Booking retry limit reached."],
         "response": response,

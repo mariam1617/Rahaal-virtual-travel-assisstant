@@ -1,6 +1,5 @@
 """Execution Subgraph for mock itinerary booking."""
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.execution.booking import (
@@ -9,10 +8,11 @@ from src.agents.execution.booking import (
     search_booking_node,
 )
 from src.agents.execution.calendar_sync import calendar_sync_node
+from src.state.schema import AppState
 
 
 def create_execution_graph(checkpointer=None):
-    workflow = StateGraph(dict)
+    workflow = StateGraph(AppState)
     workflow.add_node("SearchBooking", search_booking_node)
     workflow.add_node("booking_fallback", booking_fallback_node)
     workflow.add_node("CalendarSync", calendar_sync_node)
@@ -32,4 +32,4 @@ def create_execution_graph(checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
-execution_app = create_execution_graph( )
+execution_app = create_execution_graph()
