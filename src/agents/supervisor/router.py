@@ -12,7 +12,10 @@ Item 1: Supervisor Prompt Engineering & Intent Definition
 from typing import  Any, Dict
 from pydantic import  Field
 from langchain_core.messages import AIMessage,  HumanMessage, SystemMessage
-from src.agents.supervisor.state import SupervisorState, SupervisorDecision, TargetSubgraph
+from src.state.app_state import AppState
+from src.agents.supervisor.state import SupervisorDecision, TargetSubgraph
+
+SupervisorState = AppState  # DEPRECATED alias
 
 
 
@@ -218,7 +221,7 @@ def _is_human_message(message: Any) -> bool:
     return _message_role(message).strip().lower() in {"human", "user"}
 
 
-def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
+def supervisor_router_node(state: AppState) -> Dict[str, Any]:
     """
     Supervisor Router Node.
     Parses initial requests, maps them to primary subgraphs using structured output,
@@ -360,7 +363,7 @@ def supervisor_router_node(state: SupervisorState) -> Dict[str, Any]:
 
 
 
-def supervisor_conditional_edge(state: SupervisorState) -> str:
+def supervisor_conditional_edge(state: AppState) -> str:
     target = state.get("next_agent", "profiling")
     if target == "FINISH":
         return "FINISH"
@@ -373,7 +376,7 @@ def supervisor_conditional_edge(state: SupervisorState) -> str:
     return "profiling"
 
 
-def out_of_scope_responder_node(state: SupervisorState) -> Dict[str, Any]:
+def out_of_scope_responder_node(state: AppState) -> Dict[str, Any]:
     """
     Handles out-of-scope queries by returning a courteous refusal explaining
     Ra7al's Egypt-exclusive mission.
