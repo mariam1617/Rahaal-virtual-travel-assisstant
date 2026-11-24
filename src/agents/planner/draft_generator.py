@@ -164,9 +164,8 @@ def draft_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ai_msg = AIMessage(content=summary_text)
 
     return {
-        **state,
         "current_plan": plan,
         "response": summary_text,
-        "messages": state.get("messages", []) + [ai_msg],
-        "next_agent": "constraint_validator"
+        "messages": [ai_msg],
+        "next_agent": "constraint_validator",
     }

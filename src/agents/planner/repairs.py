@@ -162,13 +162,12 @@ def constraint_repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ai_msg = AIMessage(content=message_content)
 
     return {
-        **state,
         "current_plan": plan,
         "repair_attempts": attempts,
         "total_cost": round(new_total_cost, 2),
-        "messages": state.get("messages", []) + [ai_msg],
+        "messages": [ai_msg],
         "response": message_content,
-        "next_agent": "constraint_validator"
+        "next_agent": "constraint_validator",
     }
 
 
@@ -187,11 +186,10 @@ def repair_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ai_msg = AIMessage(content=fallback_msg)
 
     return {
-        **state,
-        "messages": state.get("messages", []) + [ai_msg],
+        "messages": [ai_msg],
         "response": fallback_msg,
         "is_constraint_valid": False,
-        "next_agent": "repair_fallback_completed"
+        "next_agent": "repair_fallback_completed",
     }
 
 
@@ -201,11 +199,10 @@ def advanced_repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
     attempts = state.get("advanced_repair_attempts", 0) + 1
     if not isinstance(plan, GeneratedPlan):
         return {
-            **state,
-            "advanced_repair_attempts": attempts,
-            "next_agent": "temporal_accessibility_validator",
-        }
-
+        "current_plan": plan,
+        "advanced_repair_attempts": attempts,
+        "next_agent": "temporal_accessibility_validator",
+    }
     for day in plan.days:
         for activity in day.activities:
             slot = activity.get("time_slot", "afternoon")
@@ -224,7 +221,6 @@ def advanced_repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     activity["accessibility"].append(need)
 
     return {
-        **state,
         "current_plan": plan,
         "advanced_repair_attempts": attempts,
         "next_agent": "temporal_accessibility_validator",
@@ -234,7 +230,6 @@ def advanced_repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
 def advanced_repair_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Terminate advanced validation when targeted repairs are exhausted."""
     return {
-        **state,
         "is_advanced_valid": False,
         "plan_quality": "Poor",
         "evaluation": {

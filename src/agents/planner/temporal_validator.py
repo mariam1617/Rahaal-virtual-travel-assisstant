@@ -95,7 +95,6 @@ def temporal_accessibility_validator_node(state: Dict[str, Any]) -> Dict[str, An
     if not isinstance(plan, GeneratedPlan):
         errors = ["No active plan available for temporal/accessibility validation."]
         return {
-            **state,
             "is_advanced_valid": False,
             "temporal_errors": errors,
             "accessibility_errors": [],
@@ -109,7 +108,6 @@ def temporal_accessibility_validator_node(state: Dict[str, Any]) -> Dict[str, An
     )
     errors = temporal_errors + accessibility_errors
     return {
-        **state,
         "is_temporal_valid": temporal_valid,
         "is_accessibility_valid": accessibility_valid,
         "is_advanced_valid": not errors,
