@@ -6,7 +6,6 @@ Module: src/agents/feedback/graph.py
 """
 
 from typing import Dict, Any
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage
 
@@ -16,12 +15,10 @@ from src.agents.feedback.preference_learning import (
     insight_extractor_node,
     ltm_preference_update_node,
 )
+from src.state.app_state import AppState
 
 
-def feedback_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Handles ambiguous or unrecognized feedback by requesting clarification.
-    """
+def feedback_fallback_node(state: AppState) -> Dict[str, Any]:
     msg = (
         "I couldn't quite understand whether you'd like to adjust your current itinerary "
         "or set a personal travel preference. Could you please specify?\n\n"
@@ -30,14 +27,13 @@ def feedback_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     ai_msg = AIMessage(content=msg)
     return {
-        **state,
         "response": msg,
-        "messages": state.get("messages", []) + [ai_msg],
-        "next_agent": "feedback_completed"
+        "messages": [ai_msg],
+        "next_agent": "feedback_completed",
     }
+     
 
-
-def route_after_ltm(state: Dict[str, Any]) -> str:
+def route_after_ltm(state: AppState) -> str:
     """
     Routes from LTM Updater: if compound ('both'), proceeds to Active Itinerary Modifier,
     otherwise ends execution.
@@ -52,8 +48,7 @@ def create_feedback_graph(checkpointer=None):
     """
     Builds and compiles the Feedback & Memory LangGraph workflow.
     """
-    workflow = StateGraph(dict)
-
+    workflow = StateGraph(AppState)
     # 1. Add Subgraph Nodes
     workflow.add_node("feedback_router", feedback_router_node)
     workflow.add_node("itinerary_modifier", itinerary_modifier_node)
@@ -95,4 +90,4 @@ def create_feedback_graph(checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
-feedback_app = create_feedback_graph(checkpointer=MemorySaver())
+feedback_app = create_feedback_graph()
