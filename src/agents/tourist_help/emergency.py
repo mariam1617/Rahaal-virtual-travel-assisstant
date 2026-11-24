@@ -44,13 +44,12 @@ def emergency_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     return {
-        **state,
         "retrieved_context": context_str,
         "candidate_response": candidate_draft,
         "response": candidate_draft,
         "help_domain": "emergency",
         "current_intent": "emergency",
-        "next_agent": "emergency_completed"
+        "next_agent": "emergency_completed",
     }
 
 
