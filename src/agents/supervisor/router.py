@@ -285,85 +285,88 @@ def supervisor_router_node(state: AppState) -> Dict[str, Any]:
             "confidence": 1.0,
             "is_egypt_scoped": state.get("is_egypt_scoped", True),
         }
-    context_lines = []
-    preferences = state.get("user_preferences")
-    if preferences is not None:
-        context_lines.append(
-            "Hydrated user_preferences: "
-            + (
-                preferences.model_dump_json(exclude_none=True)
-                if hasattr(preferences, "model_dump_json")
-                else str(preferences)
-            )
-        )
-    location = state.get("curr_location") or state.get("current_location")
-    if location:
-        context_lines.append(f"Current location: {location}")
-    context_lines.append(
-        f"Completed subgraphs: {', '.join(completed_steps) if completed_steps else 'none'}"
-    )
-    context_lines.append(
-        f"Handoff count: {handoff_count}/{max_handoff_count}"
-    )
-    hydrated_context = "\n".join(context_lines)
 
+    incoming_next_agent = state.get("next_agent")
+    approval_status = state.get("approval_status")
+
+    # Problem 7: Approved itinerary -> trigger execution subgraph instead of re-classifying planning prompt
+    if (
+        incoming_next_agent == "execution_pending"
+        or (prev_subgraph == "planner" and approval_status == "approved")
+    ):
+        if "execution" in completed_steps:
+            return {
+                "next_agent": "FINISH",
+                "target_subgraph": "",
+                "completed_steps": completed_steps,
+                "handoff_count": handoff_count,
+                "intent": "Execution already completed for approved itinerary.",
+                "routing_reason": "Execution already in completed_steps; finishing.",
+                "confidence": 1.0,
+                "is_egypt_scoped": state.get("is_egypt_scoped", True),
+            }
+        return {
+            "next_agent": "execution",
+            "target_subgraph": "execution",
+            "completed_steps": completed_steps,
+            "handoff_count": handoff_count,
+            "intent": "Approved itinerary ready for execution.",
+            "routing_reason": "Itinerary approved by user; routing to execution subgraph.",
+            "confidence": 1.0,
+            "is_egypt_scoped": True,
+        }
+
+    # Problem 7: Rejected itinerary -> finish cleanly without re-running planner
+    if incoming_next_agent == "human_approval_completed" and approval_status == "rejected":
+        return {
+            "next_agent": "FINISH",
+            "target_subgraph": "",
+            "completed_steps": completed_steps,
+            "handoff_count": handoff_count,
+            "intent": "Itinerary was rejected by user.",
+            "routing_reason": "User rejected itinerary approval; ending turn without execution.",
+            "confidence": 1.0,
+            "is_egypt_scoped": state.get("is_egypt_scoped", True),
+        }
+    
     decision: Optional[SupervisorDecision] = None
-    llm = get_router_llm()
+    router_llm = get_router_llm()
 
-    if llm:
+    if router_llm is not None:
         try:
-            structured_llm = llm.with_structured_output(SupervisorDecision)
-            system_msg = SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT)
-            prompt_parts = ["Recent conversation:\n" + recent_context]
-            if hydrated_context:
-                prompt_parts.append(hydrated_context)
-            prompt_parts.append(f"Current User Request: {user_prompt}")
-            user_msg = HumanMessage(content="\n\n".join(prompt_parts))
-            decision = structured_llm.invoke([system_msg, user_msg])
-        except Exception:
-            logger.warning(
-                "Supervisor LLM invocation failed; using heuristic fallback",
-                exc_info=True,
-                extra={
-                    "user_id": state.get("user_id"),
-                    "thread_id": state.get("session_id"),
-                },
+            structured_llm = router_llm.with_structured_output(SupervisorDecision)
+            prompt_input = (
+                f"{SUPERVISOR_SYSTEM_PROMPT}\n\n"
+                f"Recent conversation:\n{recent_context or '(none)'}\n\n"
+                f"Latest user message: {user_prompt}"
             )
-            decision = heuristic_fallback_classifier(user_prompt)
-    else:
+            decision = structured_llm.invoke(prompt_input)
+        except Exception as exc:
+            logger.warning("Supervisor router LLM failed; using heuristic fallback: %s", exc)
+
+    if decision is None:
         decision = heuristic_fallback_classifier(user_prompt)
 
-    # Enforce confidence threshold and geography once, here.
-    selected_target: TargetSubgraph = decision.target
-    routing_adjustment = ""
-    if decision.target != "out_of_scope" and decision.confidence < CONFIDENCE_THRESHOLD:
-        selected_target = "profiling"
-        routing_adjustment = (
-            f"Low confidence {decision.confidence:.2f} < threshold "
-            f"{CONFIDENCE_THRESHOLD:.2f}; routed to profiling."
-        )
-
-    # Enforce geographic exclusion
+    target = decision.target
     if not decision.is_egypt_scoped:
-        selected_target = "out_of_scope"
-        routing_adjustment = "Destination or query is outside the Egypt-only scope."
+        target = "out_of_scope"
+    elif target in SUBGRAPHS and decision.confidence < CONFIDENCE_THRESHOLD:
+        target = "profiling"
 
-    if (
-        selected_target in ("planner", "tourist_help", "execution", "feedback")
-        and selected_target in completed_steps
-    ):
-        selected_target = "FINISH"
-        routing_adjustment = (
-            f"Subgraph '{decision.target}' already completed; stopping to prevent a loop."
-        )
+    if target in completed_steps and target != "execution":
+        target = "FINISH"
 
+    target_subgraph = target if target in SUBGRAPHS else ""
     return {
-        "next_agent": selected_target,
-        "target_subgraph": selected_target if selected_target in SUBGRAPHS else "",
+        "next_agent": target,
+        "target_subgraph": target_subgraph,
         "completed_steps": completed_steps,
         "handoff_count": handoff_count,
         "intent": decision.reasoning,
-        "routing_reason": routing_adjustment or f"Routed to {selected_target}.",
+        "routing_reason": (
+            f"{decision.reasoning} (confidence={decision.confidence:.2f}, "
+            f"threshold={CONFIDENCE_THRESHOLD:.2f})"
+        ),
         "confidence": decision.confidence,
         "is_egypt_scoped": decision.is_egypt_scoped,
     }
