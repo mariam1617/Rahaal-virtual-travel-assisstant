@@ -8,6 +8,7 @@ Module: src/agents/feedback/router.py
 
 import os
 import re
+import importlib
 from typing import Dict, Any, Optional
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
@@ -49,7 +50,9 @@ def get_feedback_router_llm():
     default_model = os.getenv("DEFAULT_MODEL", "gemini-2.5-flash")
 
     if gemini_key:
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        ChatGoogleGenerativeAI = importlib.import_module(
+            "langchain_google_genai"
+        ).ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(
             model=default_model,
             google_api_key=gemini_key,

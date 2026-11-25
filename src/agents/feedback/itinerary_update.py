@@ -9,7 +9,7 @@ Module: src/agents/feedback/itinerary_update.py
 import copy
 import re
 from typing import Dict, Any, Optional, List, Tuple
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from src.state.schema import (
     GeneratedPlan,
@@ -445,6 +445,18 @@ def validate_plan_through_planner_loops(
         "is_executable": is_executable,
     }
 
+def _extract_latest_user_prompt(state: Dict[str, Any]) -> str:
+    """Safely extracts the most recent user message, ignoring intermediate AIMessages."""
+    messages = state.get("messages", [])
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            return str(msg.content)
+        if isinstance(msg, tuple) and msg[0].lower() in ("user", "human"):
+            return str(msg[1])
+        if hasattr(msg, "type") and msg.type == "human":
+            return str(msg.content)
+    return str(state.get("user_query", ""))
+
 
 def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -466,11 +478,81 @@ def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "next_agent": "feedback_completed"
         }
 
-    # Extract user prompt
-    # TODO (Problem 11): The "both" feedback path is broken.
-    # Here messages[-1] is read. In the compound "both" flow, ltm_preference_update_node just executed and appended
-    # an AIMessage ("✅ Saved your preference..."). Consequently, messages[-1] is that AI confirmation,
-    # NOT the user's modification request! Filter messages for the last HumanMessage or user message tuple.
+    # Extract user prompt safely (Fixes Problem 11)
+    user_prompt = _extract_latest_user_prompt(state)
+
+    # 1. Parse modification request
+    mod = parse_modification_request(user_prompt, plan)
+
+    # 2. Apply modification to plan
+    updated_plan, change_summary = apply_modification_to_plan(plan, mod)
+
+    # 3. Validate modified plan through Week 3/4 Planner validation loops
+    reqs = state.get("trip_requirements")
+    prefs = state.get("user_preferences")
+    val_results = validate_plan_through_planner_loops(updated_plan, reqs, prefs)
+
+    validated_plan = val_results["validated_plan"]
+    is_valid = val_results["is_executable"]
+
+    # 4. Formulate response message
+    if is_valid:
+        confirmation = (
+            f"✅ **Itinerary Updated Successfully!**\n\n"
+            f"{change_summary}\n\n"
+            f"• **New Total Estimated Cost:** ${val_results['total_cost']:.2f} USD\n"
+            f"• **Planner Validation:** Passed all budget, temporal, and logistics checks.\n"
+            f"• **Status:** Ready for your review."
+        )
+    else:
+        confirmation = (
+            f"⚠️ **Itinerary Modified with Warnings**\n\n"
+            f"{change_summary}\n\n"
+            f"• **Total Cost:** ${val_results['total_cost']:.2f} USD\n"
+            f"• **Validation Note:** {'; '.join(val_results['advanced_errors'] + val_results['constraint_errors'])}\n"
+            f"• **Status:** Review required."
+        )
+
+    ai_msg = AIMessage(content=confirmation)
+
+    return {
+        **state,
+        "current_plan": validated_plan,
+        "is_constraint_valid": val_results["is_constraint_valid"],
+        "constraint_errors": val_results["constraint_errors"],
+        "is_advanced_valid": val_results["is_advanced_valid"],
+        "temporal_errors": val_results["temporal_errors"],
+        "accessibility_errors": val_results["accessibility_errors"],
+        "total_cost": val_results["total_cost"],
+        "evaluation": val_results["evaluation"],
+        "plan_quality": val_results["plan_quality"],
+        "is_executable": is_valid,
+        "plan_modification": mod.model_dump(),
+        "response": confirmation,
+        "messages": state.get("messages", []) + [ai_msg],
+        "next_agent": "feedback_completed"
+    }
+
+def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    LangGraph Node for Active Itinerary Modifier (Story 5.2):
+    Parses modification from chat, updates the current_plan, executes
+    Planner validation loops, and outputs confirmation to user.
+    """
+    plan = state.get("current_plan")
+    if not plan or not isinstance(plan, GeneratedPlan) or not plan.days:
+        msg = (
+            "⚠️ There is currently no active itinerary in your session to modify. "
+            "Please ask me to create an itinerary first (e.g. 'Plan 3 days in Cairo')!"
+        )
+        ai_msg = AIMessage(content=msg)
+        return {
+            **state,
+            "response": msg,
+            "messages": state.get("messages", []) + [ai_msg],
+            "next_agent": "feedback_completed"
+        }
+
     messages = state.get("messages", [])
     user_prompt = ""
     if messages:
