@@ -8,6 +8,7 @@ Module: src/agents/tourist_help/graph.py
 
 from typing import Dict, Any
 from langgraph.graph import StateGraph, START, END
+from src.state import AppState  
 
 from src.agents.tourist_help.intent_resolver import (
     resolve_location_node,
@@ -21,16 +22,11 @@ from src.agents.tourist_help.recommendations import recommendations_node
 from src.agents.tourist_help.verification import help_verification_node
 
 
-def planner_delegate_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Delegate node routing to the Planner Agent when a trip-planning intent is detected.
-    """
+def planner_delegate_node(state: AppState) -> Dict[str, Any]:
     return {
-        **state,
         "next_agent": "planner",
-        "response": "Forwarding your itinerary planning request to the Planner Agent."
+        "response": "Forwarding your itinerary planning request to the Planner Agent.",
     }
-
 
 def create_tourist_help_graph():
     """
@@ -52,7 +48,7 @@ def create_tourist_help_graph():
       ├── "planner_agent"   -> planner_delegate_node ─────────► END
       └── "fallback"        -> fallback_agent_node   ─────────► END
     """
-    workflow = StateGraph(dict)
+    workflow = StateGraph(AppState)
 
     # 1. Register functional nodes
     workflow.add_node("resolve_location_node", resolve_location_node)
@@ -91,8 +87,7 @@ def create_tourist_help_graph():
     workflow.add_edge("planner_agent", END)
     workflow.add_edge("fallback", END)
 
-    return workflow.compile()
-
+    return workflow.compile(checkpointer=checkpointer)
 
 # Pre-compiled application instance for direct invocation
 tourist_help_app = create_tourist_help_graph()

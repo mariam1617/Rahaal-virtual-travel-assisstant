@@ -270,10 +270,9 @@ def insight_extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     insights_dicts = [i.model_dump() for i in extracted.insights]
 
     return {
-        **state,
         "extracted_insights": insights_dicts,
         "pending_preferences": extracted.model_dump(),
-        "next_agent": "ltm_updater"
+        "next_agent": "ltm_updater",
     }
 
 
@@ -344,10 +343,8 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ai_msg = AIMessage(content=confirm_msg)
 
     return {
-        **state,
         "user_preferences": updated_profile,
         "response": confirm_msg,
-        "messages": state.get("messages", []) + [ai_msg],
-        "next_agent": next_node
+        "messages": [ai_msg],
+        "next_agent": next_node,
     }
-

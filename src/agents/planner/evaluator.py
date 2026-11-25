@@ -33,16 +33,18 @@ def plan_evaluation_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if is_executable
         else "We generated a best-effort itinerary, but it needs review before execution."
     )
-    if isinstance(plan, GeneratedPlan):
-        plan.status = "approved" if is_executable else "review"
+    updated_plan = (
+        plan.model_copy(update={"status": "approved" if is_executable else "review"})
+        if isinstance(plan, GeneratedPlan)
+        else plan
+    )
     return {
-        **state,
         "evaluation": evaluation,
         "plan_quality": evaluation["grade"],
         "is_executable": is_executable,
-        "current_plan": plan,
+        "current_plan": updated_plan,
         "response": response,
-        "messages": state.get("messages", []) + [AIMessage(content=response)],
+        "messages": [AIMessage(content=response)],
         "next_agent": "planner_completed" if is_executable else "evaluation_fallback",
     }
 
@@ -50,18 +52,20 @@ def plan_evaluation_node(state: Dict[str, Any]) -> Dict[str, Any]:
 def plan_evaluation_fallback_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Expose a best-effort plan with an explicit non-executable warning."""
     plan = state.get("current_plan")
-    if isinstance(plan, GeneratedPlan):
-        plan.status = "review"
+    updated_plan = (
+        plan.model_copy(update={"status": "review"})
+        if isinstance(plan, GeneratedPlan)
+        else plan
+    )
     response = (
         "⚠️ **Plan Review Required**\n\n"
         "This is a best-effort itinerary. It is not approved for execution "
         "because the final quality evaluation was Poor."
     )
     return {
-        **state,
-        "current_plan": plan,
+        "current_plan": updated_plan,
         "is_executable": False,
         "response": response,
-        "messages": state.get("messages", []) + [AIMessage(content=response)],
+        "messages": [AIMessage(content=response)],
         "next_agent": "evaluation_fallback_completed",
     }

@@ -1,9 +1,8 @@
 """Planner workflow with validation, final evaluation, and HITL approval."""
 
 from typing import Any, Dict
-
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from src.state import AppState
 
 from src.agents.execution.hitl import human_approval_node
 from src.agents.planner.constraint_validator import constraint_validator_node
@@ -38,7 +37,7 @@ def route_advanced_validation(state: Dict[str, Any]) -> str:
 
 def create_planner_graph(checkpointer=None):
     """Build and compile the Week 3 Planner Part 1 workflow."""
-    workflow = StateGraph(dict)
+    workflow = StateGraph(AppState)
 
     workflow.add_node("draft_generator", draft_generator_node)
     workflow.add_node("constraint_validator", constraint_validator_node)
@@ -85,5 +84,4 @@ def create_planner_graph(checkpointer=None):
 
     return workflow.compile(checkpointer=checkpointer)
 
-
-planner_app = create_planner_graph(checkpointer=MemorySaver())
+planner_app = create_planner_graph()

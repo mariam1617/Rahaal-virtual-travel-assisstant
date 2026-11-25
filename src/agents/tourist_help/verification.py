@@ -329,7 +329,6 @@ def help_verification_node(state: Dict[str, Any]) -> Dict[str, Any]:
         errors.append(f"Guardrail intercepted response: {result.reasoning}")
 
     return {
-        **state,
         "messages": output_messages,
         "response": result.safe_response,
         "verified_response": result.safe_response,

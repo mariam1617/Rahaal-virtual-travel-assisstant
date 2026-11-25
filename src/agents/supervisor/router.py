@@ -12,6 +12,7 @@ Item 1: Supervisor Prompt Engineering & Intent Definition
 from typing import  Any, Dict
 from pydantic import  Field
 from langchain_core.messages import AIMessage,  HumanMessage, SystemMessage
+from src import state
 from src.state.app_state import AppState
 from src.agents.supervisor.state import SupervisorDecision, TargetSubgraph
 
@@ -220,6 +221,7 @@ def _is_human_message(message: Any) -> bool:
         return True
     return _message_role(message).strip().lower() in {"human", "user"}
 
+SUBGRAPHS = {"planner", "tourist_help", "execution", "feedback"}
 
 def supervisor_router_node(state: AppState) -> Dict[str, Any]:
     """
@@ -247,6 +249,7 @@ def supervisor_router_node(state: AppState) -> Dict[str, Any]:
         )
         return {
             "next_agent": "profiling",
+            "target_subgraph": "",
             "intent": decision.reasoning,
             "routing_reason": "Empty or whitespace-only input; routing to profiling.",
             "confidence": decision.confidence,
@@ -262,9 +265,18 @@ def supervisor_router_node(state: AppState) -> Dict[str, Any]:
     completed_steps = list(state.get("completed_steps", []))
     handoff_count = int(state.get("handoff_count", 0))
     max_handoff_count = int(state.get("max_handoff_count", 4))
+
+    prev_subgraph = state.get("target_subgraph")
+    if prev_subgraph in SUBGRAPHS:
+        if prev_subgraph not in completed_steps:
+            completed_steps.append(prev_subgraph)
+        handoff_count += 1
     if handoff_count >= max_handoff_count:
         return {
             "next_agent": "FINISH",
+            "target_subgraph": "",
+            "completed_steps": completed_steps,
+            "handoff_count": handoff_count,
             "intent": "Maximum subgraph handoff count reached.",
             "routing_reason": (
                 f"Hard loop cap reached at {handoff_count}/{max_handoff_count} "
@@ -272,9 +284,7 @@ def supervisor_router_node(state: AppState) -> Dict[str, Any]:
             ),
             "confidence": 1.0,
             "is_egypt_scoped": state.get("is_egypt_scoped", True),
-            "completed_steps": completed_steps,
         }
-
     context_lines = []
     preferences = state.get("user_preferences")
     if preferences is not None:
@@ -349,10 +359,13 @@ def supervisor_router_node(state: AppState) -> Dict[str, Any]:
 
     return {
         "next_agent": selected_target,
+        "target_subgraph": selected_target if selected_target in SUBGRAPHS else "",
+        "completed_steps": completed_steps,
+        "handoff_count": handoff_count,
         "intent": decision.reasoning,
         "routing_reason": routing_adjustment or f"Routed to {selected_target}.",
         "confidence": decision.confidence,
-        "is_egypt_scoped": decision.is_egypt_scoped
+        "is_egypt_scoped": decision.is_egypt_scoped,
     }
 
 

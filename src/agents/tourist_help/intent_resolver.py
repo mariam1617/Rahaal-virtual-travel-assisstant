@@ -101,7 +101,7 @@ def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LangGraph node for Story 2.1 Coordinate Resolution.
     Converts incoming raw coordinates into a human-readable location address
     before any downstream agent (Help Agent, Planner Agent, etc.) inspects the state.
-    
+
     Overwrites raw coordinates with the formatted `current_location` string.
     """
     # TODO (Problem 5): A geocoding failure leaks into user answers.
@@ -111,9 +111,9 @@ def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Handle error cases gracefully (e.g. set current_location to None or fallback to "Egypt"),
     # and provide structured fields: governorate (state/province), neighborhood, country code, lat/lon.
     coords = extract_coordinates(state)
-    
+
     if coords is None:
-        return state
+        return {}
 
     lat, lon = coords
     location_response = reverse_geocode(lat=lat, lon=lon)
@@ -124,7 +124,6 @@ def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     return {
-        **state,
         "current_location": location_response.formatted_address,
         "raw_coordinates": None,
         "location_details": {
@@ -132,9 +131,8 @@ def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "country": location_response.country,
             "formatted_address": location_response.formatted_address,
             "error": location_response.error,
-        }
+        },
     }
-
 
 # =========================================================================
 # Intent Classification & Parser Nodes (Story 2.1)
@@ -192,10 +190,9 @@ def intent_parser_node(state: Dict[str, Any]) -> Dict[str, Any]:
     current_intent = state.get("current_intent") or state.get("help_domain")
     if current_intent and current_intent not in ["unclassified", "unknown", "None", "general"]:
         return {
-            **state,
             "help_domain": current_intent,
             "current_intent": current_intent,
-            "next_help_node": current_intent
+            "next_help_node": current_intent,
         }
 
     # Extract user prompt from messages or user_query
@@ -216,12 +213,11 @@ def intent_parser_node(state: Dict[str, Any]) -> Dict[str, Any]:
     parsed_intent = parse_tourist_intent(user_prompt)
 
     return {
-        **state,
         "user_query": user_prompt,
         "current_intent": parsed_intent,
         "help_domain": parsed_intent,
         "next_help_node": parsed_intent,
-        "intent": f"Tourist help parsed intent: {parsed_intent}"
+        "intent": f"Tourist help parsed intent: {parsed_intent}",
     }
 
 
@@ -270,11 +266,10 @@ def fallback_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "You can ask for emergency assistance, visa/travel advisories, or nearby place recommendations."
     )
     return {
-        **state,
         "response": fallback_response,
         "verified_response": fallback_response,
         "candidate_response": fallback_response,
         "help_domain": "general",
         "current_intent": "fallback",
-        "next_agent": "fallback_completed"
+        "next_agent": "fallback_completed",
     }

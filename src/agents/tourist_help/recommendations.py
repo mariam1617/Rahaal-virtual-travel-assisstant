@@ -34,7 +34,6 @@ def recommendations_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     return {
-        **state,
         "retrieved_context": context_str,
         "candidate_response": candidate_draft,
         "response": candidate_draft,

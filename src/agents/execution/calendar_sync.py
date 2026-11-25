@@ -9,7 +9,6 @@ def calendar_sync_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Write confirmed bookings to Google Calendar only after booking success."""
     if state.get("booking_status") != "confirmed":
         return {
-            **state,
             "calendar_status": "blocked",
             "calendar_events": [],
             "calendar_errors": ["Calendar sync requires confirmed bookings."],
@@ -40,7 +39,6 @@ def calendar_sync_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if not bookings:
         return {
-            **state,
             "calendar_status": "blocked",
             "calendar_events": [],
             "calendar_errors": ["No confirmed bookings are available to sync."],
@@ -48,7 +46,6 @@ def calendar_sync_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
     if errors:
         return {
-            **state,
             "calendar_status": "partial" if events else "failed",
             "calendar_events": events,
             "calendar_errors": errors,
@@ -56,7 +53,6 @@ def calendar_sync_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     return {
-        **state,
         "calendar_status": "synced",
         "calendar_events": events,
         "calendar_errors": [],

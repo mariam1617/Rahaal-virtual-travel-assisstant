@@ -426,12 +426,14 @@ def validate_plan_through_planner_loops(
     all_errors = constraint_errors + advanced_errors
     evaluation = evaluate_plan(plan, all_errors)
     plan_quality = evaluation.get("grade", "Good")
-    is_executable = (plan_quality == "Good")
+    is_executable = plan_quality == "Good"
 
-    plan.status = "validated" if is_executable else "review"
+    validated_plan = plan.model_copy(
+        update={"status": "validated" if is_executable else "review"}
+    )
 
     return {
-        "validated_plan": plan,
+        "validated_plan": validated_plan,
         "is_constraint_valid": is_constraint_valid,
         "constraint_errors": constraint_errors,
         "is_advanced_valid": is_advanced_valid,
@@ -547,10 +549,9 @@ def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
         ai_msg = AIMessage(content=msg)
         return {
-            **state,
             "response": msg,
-            "messages": state.get("messages", []) + [ai_msg],
-            "next_agent": "feedback_completed"
+            "messages": [ai_msg],
+            "next_agent": "feedback_completed",
         }
 
     messages = state.get("messages", [])
@@ -596,7 +597,6 @@ def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ai_msg = AIMessage(content=confirmation)
 
     return {
-        **state,
         "current_plan": validated_plan,
         "is_constraint_valid": val_results["is_constraint_valid"],
         "constraint_errors": val_results["constraint_errors"],
@@ -609,6 +609,6 @@ def itinerary_modifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "is_executable": is_valid,
         "plan_modification": mod.model_dump(),
         "response": confirmation,
-        "messages": state.get("messages", []) + [ai_msg],
-        "next_agent": "feedback_completed"
+        "messages": [ai_msg],
+        "next_agent": "feedback_completed",
     }

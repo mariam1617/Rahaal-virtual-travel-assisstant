@@ -66,10 +66,9 @@ def constraint_validator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     plan = state.get("current_plan")
     if not isinstance(plan, GeneratedPlan):
         return {
-            **state,
             "is_constraint_valid": False,
             "constraint_errors": ["No active plan available for constraint validation."],
-            "next_agent": "draft_generator"
+            "next_agent": "draft_generator",
         }
 
     # Extract user budget
@@ -96,25 +95,21 @@ def constraint_validator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     attempts = state.get("repair_attempts", 0)
 
     if is_valid:
-        plan.status = "validated"
+        updated_plan = plan.model_copy(update={"status": "validated"})
         return {
-            **state,
-            "current_plan": plan,
+            "current_plan": updated_plan,
             "is_constraint_valid": True,
             "constraint_errors": [],
             "total_cost": total_cost,
-            "next_agent": "plan_validated"
+            "next_agent": "plan_validated",
         }
 
-    # If invalid, prepare for repair loop or fallback cutoff
     next_node = "constraint_repair" if attempts < 3 else "repair_fallback"
 
     return {
-        **state,
-        "current_plan": plan,
         "is_constraint_valid": False,
         "constraint_errors": all_errors,
         "total_cost": total_cost,
         "budget_overage": overage,
-        "next_agent": next_node
+        "next_agent": next_node,
     }
