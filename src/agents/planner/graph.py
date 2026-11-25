@@ -3,6 +3,7 @@
 from typing import Any, Dict
 from langgraph.graph import END, START, StateGraph
 from src.state import AppState
+from langgraph.checkpoint.memory import MemorySaver
 
 from src.agents.execution.hitl import human_approval_node
 from src.agents.planner.constraint_validator import constraint_validator_node
@@ -84,4 +85,5 @@ def create_planner_graph(checkpointer=None):
 
     return workflow.compile(checkpointer=checkpointer)
 
-planner_app = create_planner_graph()
+planner_checkpointer = MemorySaver()
+planner_app = create_planner_graph(checkpointer=planner_checkpointer)

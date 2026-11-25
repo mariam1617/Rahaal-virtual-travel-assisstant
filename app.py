@@ -209,9 +209,11 @@ def inject_css(signed_in):
 # Cached resources
 # ----------------------------------------------------------------------------
 
+from langgraph.checkpoint.memory import MemorySaver
+
 @st.cache_resource
 def get_supervisor():
-    return create_supervisor_graph()
+    return create_supervisor_graph(checkpointer=MemorySaver())
 
 
 @st.cache_resource
@@ -640,23 +642,65 @@ def render_approval_panel():
 
     if approve_clicked or reject_clicked:
         resume_config = {"configurable": {"thread_id": pending["thread_id"]}}
-        planner_app.invoke(
-            Command(resume={"approved": approve_clicked}),
+        payload = pending.get("interrupt_payload") or {}
+        plan_obj = pending.get("plan") or {}
+        expected_plan_id = payload.get("plan_id") or plan_obj.get("plan_id")
+        expected_plan_version = payload.get("plan_version") or plan_obj.get("plan_version")
+
+        resume_value = {
+            "approved": bool(approve_clicked),
+            "plan_id": expected_plan_id,
+            "plan_version": expected_plan_version,
+        }
+        resumed = planner_app.invoke(
+            Command(resume=resume_value),
             config=resume_config,
         )
-        response = (
-            "Itinerary approved. It is ready for execution."
-            if approve_clicked
-            else "Itinerary rejected. No bookings or charges were made."
-        )
+
+        resumed_plan = resumed.get("current_plan")
+        resumed_plan_id = (
+            getattr(resumed_plan, "plan_id", None)
+            if resumed_plan is not None and not isinstance(resumed_plan, dict)
+            else (resumed_plan or {}).get("plan_id") if isinstance(resumed_plan, dict) else None
+        ) or expected_plan_id
+
+        if approve_clicked and expected_plan_id and resumed_plan_id != expected_plan_id:
+            response = (
+                "Stale approval detected: the itinerary changed before confirmation. "
+                "Please review the updated plan."
+            )
+            route_used = "planner"
+        elif approve_clicked:
+            approved_plan = resumed_plan or plan_obj
+            exec_thread_id = f"execution-{st.session_state.get('session_id', 'streamlit-default')}"
+            exec_result = execution_app.invoke(
+                {
+                    "approval_status": "approved",
+                    "current_plan": approved_plan,
+                    "user_id": (st.session_state.get("auth_user") or {}).get("user_id"),
+                },
+                config={"configurable": {"thread_id": exec_thread_id}},
+            )
+            response = (
+                exec_result.get("response")
+                or "Itinerary approved and booking/calendar execution completed."
+            )
+            route_used = "execution"
+        else:
+            response = (
+                "Itinerary rejected. No bookings or charges were made. "
+                "Tell me what you'd like to adjust and I can update or replan it."
+            )
+            route_used = "feedback"
+
         st.session_state.pending_approval = None
         st.session_state.messages.append({
             "role": "assistant",
             "content": response,
-            "route": "execution" if approve_clicked else "planner",
+            "route": route_used,
         })
         st.rerun()
-
+        
 
 def render_history(user):
     for message in st.session_state.messages:
@@ -729,6 +773,7 @@ def handle_prompt(prompt, user):
                 st.session_state.pending_approval = {
                     "plan": specialist_response["plan"],
                     "thread_id": specialist_response["thread_id"],
+                    "interrupt_payload": specialist_response.get("interrupt_payload"),
                 }
                 should_rerun_for_approval = True
         else:

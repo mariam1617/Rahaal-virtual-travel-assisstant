@@ -13,7 +13,7 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
     # Ensure guest/anonymous sessions do not overwrite each other or share persistent profiles.
     user_id = state.get("user_id")
     if not user_id:
-        return {**state, "context_loaded": False}
+        return {"context_loaded": False}
 
     try:
         # TODO (Problem 2): Profile logic exists three times (ProfileStore, MemoryLoader, SQLiteUserRepository).
@@ -21,7 +21,6 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
         profile = MemoryLoader.get_user_profile(user_id)
     except Exception:
         return {
-            **state,
             "context_loaded": False,
             "context_warning": (
                 f"Unable to load profile for user '{user_id}' due to a "
@@ -33,7 +32,6 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
 
     if profile is None:
         return {
-            **state,
             "context_loaded": False,
             "context_warning": f"No profile found for user '{user_id}'.",
             "needs_profiling": True,
@@ -41,12 +39,10 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
         }
 
     return {
-        **state,
         "user_preferences": profile,
         "context_loaded": True,
         "needs_profiling": False,
     }
-
 
 def route_context(state: Dict[str, Any]) -> str:
     """Route unknown users to profiling before specialist classification."""
