@@ -1,0 +1,120 @@
+"""
+Offline tests for TouristRAG (Story 2.3).
+A tiny hashing embedder replaces sentence-transformers so tests need no
+internet / model download. Semantic quality must still be checked once with the
+real model (see README of the change).
+"""
+
+import re
+import zlib
+
+import pytest
+from chromadb import Documents, EmbeddingFunction, Embeddings
+
+from src.rag.tourist_rag import config, vector_store
+from src.rag.tourist_rag.chunking import split_text
+
+
+class HashEmbedding(EmbeddingFunction[Documents]):
+    DIM = 384
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def name() -> str:
+        return "hash-test-embedding"
+
+    def get_config(self):
+        return {}
+
+    @staticmethod
+    def build_from_config(config):
+        return HashEmbedding()
+
+    def __call__(self, input: Documents) -> Embeddings:
+        out = []
+        for text in input:
+            vec = [0.0] * self.DIM
+            for word in re.findall(r"\w+", text.lower()):
+                vec[zlib.crc32(word.encode()) % self.DIM] += 1.0
+            norm = sum(v * v for v in vec) ** 0.5 or 1.0
+            out.append([v / norm for v in vec])
+        return out
+
+
+@pytest.fixture(scope="module")
+def ingested(tmp_path_factory):
+    mp = pytest.MonkeyPatch()
+    mp.setattr(config, "CHROMA_DIR", tmp_path_factory.mktemp("chroma"))
+    vector_store.get_embedding_function.cache_clear()
+    mp.setattr(vector_store, "get_embedding_function", lambda: HashEmbedding())
+
+    from src.rag.tourist_rag.ingest import ingest_documents
+    count = ingest_documents(reset=True)
+    yield count
+    mp.undo()
+
+
+def test_config_paths_point_to_real_data():
+    assert config.KNOWLEDGE_BASE_DIR.name == "db" and config.KNOWLEDGE_BASE_DIR.exists()
+    for sources in config.KNOWLEDGE_SOURCES.values():
+        for path in sources:
+            assert path.exists(), f"missing knowledge source: {path}"
+    assert config.CHROMA_DIR.name == "chroma_db"
+
+
+def test_split_text_always_terminates():
+    assert len(split_text("a b " + "x" * 3000)) > 1
+
+
+def test_ingest_loads_all_categories(ingested):
+    from src.rag.tourist_rag.retriever import search
+    assert ingested > 0
+    for category in ("visa", "transit", "advisory"):
+        assert search("Egypt", category=category), f"no chunks for {category}"
+
+
+def test_emergency_csv_not_mixed_in(ingested):
+    from src.rag.tourist_rag.vector_store import get_collection
+    sources = {m["source"] for m in get_collection().get(include=["metadatas"])["metadatas"]}
+    assert "emergency_db.csv" not in sources
+
+
+def test_check_equivisa_exact_nationality(ingested):
+    from src.tools.rag import check_equivisa
+    res = check_equivisa("a German citizen")
+    assert res["found"] and res["eligible"] is True
+    assert res["nationality"] == "Germany"
+    assert "30" in res["context"] and "6 months" in res["context"]
+
+
+def test_check_equivisa_unknown_nationality(ingested):
+    from src.tools.rag import check_equivisa
+    res = check_equivisa("Turkey")
+    assert res["found"] is False and res["eligible"] is None
+
+
+def test_other_tools(ingested):
+    from src.tools.rag import get_country_advisors, transport_rules
+    assert get_country_advisors("Libya border travel warning")["found"]
+    assert transport_rules("airports in Egypt")["found"]
+
+
+def test_node_nationality_visa(ingested):
+    from src.agents.tourist_help.advisories import advisories_rag_node
+    out = advisories_rag_node({"user_query": "I'm German, do I need a visa for Egypt and how much is it?"})
+    assert out["rag_used"] is True and out["help_domain"] == "advisories"
+    assert "Germany" in out["candidate_response"] and "30" in out["candidate_response"]
+    assert "visa on arrival" not in out["candidate_response"].lower()
+
+
+def test_full_graph_visa_flow(ingested):
+    from src.agents.tourist_help.graph import tourist_help_app
+    final = tourist_help_app.invoke({
+        "messages": [("user", "What are the Egypt e-Visa rules, costs, and passport requirements?")],
+        "user_id": "t1",
+    })
+    assert final["help_domain"] == "advisories" and final["is_verified"] is True
+    assert final["rag_used"] is True
+    assert "e-Visa" in final["verified_response"] and "6 months" in final["verified_response"]
