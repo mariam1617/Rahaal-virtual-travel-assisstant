@@ -188,7 +188,6 @@ def feedback_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
         next_agent = "feedback_fallback"
 
     return {
-        **state,
         "feedback_type": decision.feedback_type,
         "feedback_confidence": decision.confidence,
         "feedback_reasoning": decision.reasoning,
