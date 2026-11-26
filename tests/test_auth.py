@@ -24,7 +24,7 @@ from src.services.auth import (
     DEMO_PASSWORD,
 )
 from src.db.profile_store import ProfileStore
-from src.state.memory import MOCK_USER_DB
+from src.services.profile_service import ProfileService
 from src.main import app
 
 
@@ -170,9 +170,10 @@ def test_auth_service_registration_success(temp_auth_service):
     assert user.username == "tariq_cairo"
     assert user.name == "Tariq Cairo"
 
-    # Profile provisioned in MOCK_USER_DB
-    assert "tariq_cairo" in MOCK_USER_DB
-    assert MOCK_USER_DB["tariq_cairo"]["name"] == "Tariq Cairo"
+    # Profile provisioned in SQLite / ProfileService
+    profile = ProfileService(temp_auth_service.user_repo).get_or_init("tariq_cairo")
+    assert profile is not None
+    assert profile.name == "Tariq Cairo"
 
 
 def test_auth_service_registration_duplicate_fails(temp_auth_service):

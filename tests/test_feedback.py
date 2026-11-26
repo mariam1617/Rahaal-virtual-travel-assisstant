@@ -417,17 +417,26 @@ def test_insight_extractor_node():
 # =========================================================================
 
 from src.db.profile_store import ProfileStore, cosine_similarity
-from src.state.memory import MOCK_USER_DB
+from src.db.repositories.user_repo import SQLiteUserRepository, UserRecord
 from src.agents.feedback.preference_learning import ltm_preference_update_node
 from src.agents.feedback.graph import feedback_app, create_feedback_graph
+
+
+def _ensure_test_user(user_id: str, name: str = "Test User"):
+    repo = SQLiteUserRepository()
+    if not repo.get_by_user_id(user_id):
+        repo.create(UserRecord(
+            user_id=user_id,
+            username=user_id,
+            name=name,
+            hashed_password="hashed_test_password"
+        ))
 
 
 def test_profile_store_get_and_update():
     """Validates persistent profile reading and updating in LTM store."""
     user_id = "test_user_ltm"
-    # Ensure fresh user
-    if user_id in MOCK_USER_DB:
-        del MOCK_USER_DB[user_id]
+    _ensure_test_user(user_id, name="LTM Tester")
 
     profile = ProfileStore.ensure_user_profile(user_id, name="LTM Tester")
     assert profile.user_id == user_id
@@ -438,12 +447,13 @@ def test_profile_store_get_and_update():
 
     assert DietaryPreference.VEGAN in updated.dietary
     assert "museums" in updated.interests
-    assert "morning flights" in MOCK_USER_DB[user_id]["travel_habits"]
+    assert "morning flights" in updated.travel_habits
 
 
 def test_profile_store_vector_insight_search():
     """Validates semantic search over historical preference insights."""
     user_id = "search_user_test"
+    _ensure_test_user(user_id)
     extracted = extract_preference_insights("I prefer morning flights and luxury 5-star hotels")
     ProfileStore.update_user_preferences(user_id, extracted)
 
@@ -458,6 +468,7 @@ def test_profile_store_vector_insight_search():
 def test_ltm_preference_update_node_standalone():
     """Tests the ltm_preference_update_node execution for a pure preference feedback."""
     user_id = "node_user_test"
+    _ensure_test_user(user_id)
     state = {
         "user_id": user_id,
         "messages": [("user", "I prefer morning flights and eat halal")],
@@ -473,6 +484,7 @@ def test_ltm_preference_update_node_standalone():
 def test_ltm_preference_update_node_compound_chains_to_modifier():
     """Tests compound intent routes to itinerary_modifier after saving to LTM."""
     user_id = "compound_user_test"
+    _ensure_test_user(user_id)
     state = {
         "user_id": user_id,
         "messages": [("user", "I am vegetarian, please change dinner to a vegetarian restaurant")],
@@ -511,6 +523,7 @@ def test_feedback_subgraph_e2e_trip_adjustment():
 
 def test_feedback_subgraph_e2e_preference_learning():
     """End-to-end execution of preference learning request through feedback_app."""
+    _ensure_test_user("e2e_user_pref")
     input_state = {
         "user_id": "e2e_user_pref",
         "messages": [("user", "I prefer morning flights and boutique hotels")]
@@ -523,11 +536,12 @@ def test_feedback_subgraph_e2e_preference_learning():
 
     assert result["feedback_type"] == "long_term_preference"
     assert "morning flights" in result["response"].lower()
-    assert "morning flights" in MOCK_USER_DB["e2e_user_pref"]["travel_habits"]
+    assert "morning flights" in result["user_preferences"].travel_habits
 
 
 def test_feedback_subgraph_e2e_compound():
     """End-to-end execution of compound request (both preference + trip adjustment)."""
+    _ensure_test_user("e2e_user_compound")
     plan = _create_sample_test_plan()
     input_state = {
         "user_id": "e2e_user_compound",
@@ -543,7 +557,7 @@ def test_feedback_subgraph_e2e_compound():
 
     assert result["feedback_type"] == "both"
     # Preference was saved to LTM
-    assert DietaryPreference.VEGETARIAN in MOCK_USER_DB["e2e_user_compound"]["dietary"]
+    assert DietaryPreference.VEGETARIAN in result["user_preferences"].dietary
     # Itinerary dinner was modified
     d1_dinner = [a for a in result["current_plan"].days[0].activities if a.get("time_slot") == "evening"][0]
     assert "Vegetarian" in d1_dinner["name"] or "Abou Tarek" in d1_dinner["name"]
