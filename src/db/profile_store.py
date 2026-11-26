@@ -4,19 +4,13 @@ Module: src/db/profile_store.py
 Story Reference: Story 5.3 - Long-Term Preference Learning (Week 6)
 """
 
-import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from src.state.schema import (
     UserPreferences,
-    DietaryPreference,
     UserInsight,
     ExtractedPreferences,
 )
 from src.services.profile_service import ProfileService, UnknownUserError
-
-# In-memory vector index for user preference insights: user_id -> List[Dict]
-USER_INSIGHTS_STORE: Dict[str, List[Dict[str, Any]]] = {}
-
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     """Computes cosine similarity between two unit-normalized vectors."""
@@ -29,7 +23,7 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 class ProfileStore:
     """
     DEPRECATED: Thin compatibility wrapper over ProfileService.
-    Manages persistent storage, retrieval, and vector search of user profiles
+    Manages persistent storage, retrieval, and token-overlap search of user profiles
     and long-term travel preferences.
     """
     user_repo = None
@@ -71,28 +65,15 @@ class ProfileStore:
         newly learned dietary rules, interests, budget tier, habits, and accessibility.
         """
         svc = cls._get_service()
-        for insight in extracted.insights:
-            cls.store_insight_embedding(user_id, insight)
         return svc.apply_extracted(user_id, extracted)
 
     @classmethod
     def store_insight_embedding(cls, user_id: str, insight: UserInsight) -> None:
-        """Stores insight metadata and vector embedding in the user's vector index."""
-        if user_id not in USER_INSIGHTS_STORE:
-            USER_INSIGHTS_STORE[user_id] = []
-
-        # Avoid exact duplicate entries
-        existing = [
-            i for i in USER_INSIGHTS_STORE[user_id]
-            if i.get("key") == insight.key and i.get("insight_type") == insight.insight_type
-        ]
-        if existing:
-            existing[0]["value"] = insight.value
-            existing[0]["raw_text"] = insight.raw_text
-            existing[0]["embedding"] = insight.embedding
-            existing[0]["tags"] = insight.tags
-        else:
-            USER_INSIGHTS_STORE[user_id].append(insight.model_dump())
+        """DEPRECATED: Persists insight metadata without storing hashed embeddings."""
+        cls._get_service().apply_extracted(
+            user_id,
+            ExtractedPreferences(insights=[insight]),
+        )
 
     @classmethod
     def search_user_insights(
@@ -102,25 +83,6 @@ class ProfileStore:
         top_k: int = 3
     ) -> List[Dict[str, Any]]:
         """
-        Performs semantic similarity search over the user's historical preference insights.
+        DEPRECATED: Searches persisted insights using token overlap.
         """
-        from src.agents.feedback.preference_learning import compute_insight_embedding
-
-        records = USER_INSIGHTS_STORE.get(user_id, [])
-        if not records:
-            return []
-
-        query_vec = compute_insight_embedding(query)
-        scored: List[Tuple[float, Dict[str, Any]]] = []
-
-        for record in records:
-            rec_vec = record.get("embedding")
-            if rec_vec:
-                sim = cosine_similarity(query_vec, rec_vec)
-                scored.append((sim, record))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [
-            {**rec, "similarity_score": round(score, 4)}
-            for score, rec in scored[:top_k]
-        ]
+        return cls._get_service().search_insights(user_id, query, top_k)

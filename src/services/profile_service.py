@@ -2,6 +2,7 @@ import re
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
+from src.db.repositories.insight_repo import SQLiteInsightRepository
 from src.db.repositories.user_repo import SQLiteUserRepository
 from src.state.schema import DietaryPreference, ExtractedPreferences, PreferenceItem, UserPreferences
 
@@ -151,10 +152,10 @@ def _merge_legacy(p: UserPreferences, ex: ExtractedPreferences) -> ApplyResult:
         ("accessibility", before.accessibility_needs or [], merged.accessibility_needs or []),
         ("habit", before.travel_habits, merged.travel_habits),
     ):
-        old_keys = {_key(value.value if isinstance(value, DietaryPreference) else value) for value in old_values}
+        old_set = set(old_values)
         for value in new_values:
             display = value.value if isinstance(value, DietaryPreference) else value
-            if _key(display) not in old_keys:
+            if value not in old_set:
                 changes.append(f"{label}: {display}")
     if before.budget_level != merged.budget_level:
         changes.append(f"budget: {merged.budget_level}")
@@ -175,8 +176,13 @@ def merge_extracted(p: UserPreferences, ex: ExtractedPreferences) -> UserPrefere
 class ProfileService:
     _default: Optional["ProfileService"] = None
 
-    def __init__(self, repo: Optional[SQLiteUserRepository] = None):
+    def __init__(
+        self,
+        repo: Optional[SQLiteUserRepository] = None,
+        insight_repo: Optional[SQLiteInsightRepository] = None,
+    ):
         self.repo = repo or SQLiteUserRepository()   # ONE repo instance per service
+        self.insight_repo = insight_repo or SQLiteInsightRepository(db_path=self.repo.db_path)
 
     @classmethod
     def default(cls) -> "ProfileService":
@@ -294,6 +300,10 @@ class ProfileService:
         if updated_dict:
             result = captured[-1] if captured else ApplyResult(UserPreferences.model_validate(updated_dict))
             result.profile = UserPreferences.model_validate(updated_dict)
+            try:
+                self._persist_insights(user.user_id, extracted)
+            except Exception:
+                logger.exception("Could not sync insights for user %s", user.user_id)
             return result
 
         base = self.get_or_init(user.user_id) or self.guest_profile()
@@ -343,4 +353,70 @@ class ProfileService:
             return profile.model_dump(mode="json")
 
         updated = self.repo.update_profile_atomic(user.user_id, mutate)
-        return UserPreferences.model_validate(updated) if updated else None
+        if not updated:
+            return None
+        try:
+            insight_type = "interest" if category == "interest" else category
+            self._delete_insight_matches(user.user_id, insight_type, value)
+        except Exception:
+            logger.exception("Could not delete forgotten insight for user %s", user.user_id)
+        return UserPreferences.model_validate(updated)
+
+    def _delete_insight_matches(self, user_id: str, insight_type: str, value: str) -> None:
+        normalized = _key(value)
+        candidates = {normalized, normalized.replace(" ", "_")}
+        if len(normalized) > 3 and not normalized.endswith("s") and not normalized.endswith("ss"):
+            plural = normalized + "s"
+            candidates.update({plural, plural.replace(" ", "_")})
+        for key in candidates:
+            self.insight_repo.delete(user_id, insight_type, key)
+
+    def _persist_insights(self, user_id: str, extracted: ExtractedPreferences) -> None:
+        for insight in extracted.insights:
+            insight_data = insight.model_dump(exclude={"embedding"})
+            insight_data["key"] = _key(str(insight_data.get("key") or insight_data.get("value") or ""))
+            self.insight_repo.upsert(user_id, insight_data)
+
+        for item in extracted.items:
+            value = _norm(item.value)
+            if item.scope != "long_term" or not value:
+                continue
+            if item.category == "dietary":
+                try:
+                    DietaryPreference(value)
+                except ValueError:
+                    continue
+            if item.category == "budget_level" and item.polarity == "avoid":
+                continue
+
+            key = _key(value)
+            if item.polarity == "avoid" and item.category in {
+                "dietary", "accessibility", "travel_habit"
+            }:
+                self._delete_insight_matches(user_id, item.category, value)
+                continue
+            self.insight_repo.upsert(user_id, {
+                "insight_type": item.category,
+                "key": key,
+                "value": value,
+                "polarity": item.polarity,
+                "tags": [item.category, item.polarity, key],
+                "raw_text": item.evidence,
+                "confidence": 1.0,
+            })
+
+    def get_insights(self, user_id: Optional[str]) -> list[Dict[str, Any]]:
+        uid = _norm(user_id)
+        if not uid or not self.is_registered(uid):
+            return []
+        user = self.repo.get_by_user_id(uid) or self.repo.get_by_username(uid)
+        return self.insight_repo.list(user.user_id) if user else []
+
+    def search_insights(
+        self, user_id: Optional[str], query: str, top_k: int = 3
+    ) -> list[Dict[str, Any]]:
+        uid = _norm(user_id)
+        if not uid or not self.is_registered(uid):
+            return []
+        user = self.repo.get_by_user_id(uid) or self.repo.get_by_username(uid)
+        return self.insight_repo.search(user.user_id, query, top_k) if user else []

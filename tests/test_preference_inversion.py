@@ -1,7 +1,11 @@
 import pytest
 
 from src.db.repositories.user_repo import SQLiteUserRepository, UserRecord
-from src.services.profile_service import ProfileService, merge_extracted
+from src.services.profile_service import (
+    ProfileService,
+    merge_extracted,
+    merge_extracted_with_changes,
+)
 from src.state.schema import (
     DietaryPreference,
     ExtractedPreferences,
@@ -18,6 +22,20 @@ def test_dislike_museums_moves_to_avoided():
     result = merge_extracted(profile, extracted)
     assert result.liked_interests == []
     assert result.avoided_interests == ["museums"]
+
+
+def test_changes_include_legacy_additions_and_item_inversion():
+    profile = UserPreferences(user_id="u", name="U")
+    extracted = ExtractedPreferences(
+        interests=["museums"],
+        items=[PreferenceItem(category="interest", value="museums", polarity="avoid")],
+    )
+
+    result = merge_extracted_with_changes(profile, extracted)
+
+    assert result.profile.liked_interests == []
+    assert result.profile.avoided_interests == ["museums"]
+    assert result.changes == ["liked: museums", "avoided: museums (was liked)"]
 
 
 def test_interest_polarity_inverts_and_plural_singular_matches():

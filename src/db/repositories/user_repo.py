@@ -315,6 +315,11 @@ class SQLiteUserRepository(IUserRepository):
             return False
         uid = user_id.strip().lower()
         with self._connect() as conn:
+            try:
+                conn.execute("DELETE FROM user_insights WHERE LOWER(user_id) = ?", (uid,))
+            except sqlite3.OperationalError as exc:
+                if "no such table" not in str(exc).lower():
+                    raise
             conn.execute(
                 "DELETE FROM user_profiles WHERE LOWER(user_id) = ?",
                 (uid,)

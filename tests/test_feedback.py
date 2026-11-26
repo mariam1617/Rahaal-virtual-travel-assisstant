@@ -457,8 +457,8 @@ def test_profile_store_vector_insight_search():
     extracted = extract_preference_insights("I prefer morning flights and luxury 5-star hotels")
     ProfileStore.update_user_preferences(user_id, extracted)
 
-    # Query with semantic variation
-    results = ProfileStore.search_user_insights(user_id, query="early flight schedule departure", top_k=2)
+    # Search uses token overlap, not semantic similarity.
+    results = ProfileStore.search_user_insights(user_id, query="morning flights", top_k=2)
     assert len(results) >= 1
     top_hit = results[0]
     assert top_hit["key"] == "morning_flights"
