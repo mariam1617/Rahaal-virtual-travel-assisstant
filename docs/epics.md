@@ -135,6 +135,7 @@
 - Supervisor Router directs to HumanApproval.
 - If Rejected, the Execution subgraph exits gracefully.
 - If Approved, the state moves to Hold ➔ Confirm.
+- The planner pauses after a Good final evaluation with a LangGraph interrupt and resumes only with an explicit approval decision.
 
 ## Story 4.2: Booking Confirmation & Retries
 

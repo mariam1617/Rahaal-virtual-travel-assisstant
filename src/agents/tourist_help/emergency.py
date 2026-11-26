@@ -1,6 +1,7 @@
 """
-Tourist Help Emergency Assistance Node (Story 2.2 / Dev 3 Stub)
+Tourist Help Emergency Assistance Node (Story 2.2)
 Queries EmergencyDB pipeline and prepares candidate response for the verification node.
+Module: src/agents/tourist_help/emergency.py
 """
 
 from typing import Dict, Any
@@ -9,29 +10,48 @@ from typing import Dict, Any
 def emergency_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     LangGraph node: queries EmergencyDB and drafts candidate emergency instructions.
-    Passes output to Dev 4's Help Verification Node.
+    Passes output to the Help Verification Guardrail Node.
     """
-    user_query = state.get("user_query", "Emergency help")
+    # TODO (Problem 5): If reverse_geocode returned "Location unavailable", it leaks into
+    # the response as "🚨 Emergency Assistance for Location unavailable:". Sanitize location fallback.
+    location = state.get("current_location") or "Egypt"
+    if location == "Location unavailable":
+        location = "Egypt"
 
-    # Ingest context from EmergencyDB or default registry
+    # TODO (Problem 8): Tourist Help has no real retrieval.
+    # emergency, advisories and recommendations each hardcode both the "retrieved chunks" and the "candidate answer".
+    # The user's actual question is never used to retrieve relevant documents from EmergencyDB or a vector index.
+    # The verifier downstream then simply checks candidate text against context that was hardcoded and copied from it.
+    # Context ground truth for verification node
     retrieved_chunks = [
         "Tourist Police (شرطة السياحة): 126 (Nationwide assistance for international tourists, harassment, scams).",
         "Ambulance / Medical Emergency (الإسعاف): 123 (Urgent medical transport across all governorates).",
-        "General Police (الشرطة): 122 (Accidents and urgent security incidents)."
+        "General Police (الشرطة): 122 (Accidents and urgent security incidents across Egypt).",
+        "Fire Department & Civil Protection (المطافئ): 180 (Fire emergencies and rescue operations).",
+        "Traffic Police (مرور مصر): 128 (Highway breakdowns and road incidents)."
     ]
     context_str = "\n".join(retrieved_chunks)
 
     # Draft candidate response
     candidate_draft = (
+        f"🚨 Emergency Assistance for {location}:\n"
         "For immediate emergency assistance in Egypt, please call:\n"
-        "- Tourist Police: 126 (tourist safety and scams)\n"
-        "- Ambulance: 123 (medical emergencies)\n"
-        "- General Police: 122 (accidents and security)"
+        "• Tourist Police (شرطة السياحة): 126 (tourist safety, harassment, scams)\n"
+        "• Ambulance (الإسعاف): 123 (urgent medical emergencies)\n"
+        "• General Police (الشرطة): 122 (accidents and security incidents)\n"
+        "• Fire Department (المطافئ): 180\n"
+        "If you are in immediate danger, please dial 126 or 122 right away."
     )
 
     return {
-        **state,
         "retrieved_context": context_str,
         "candidate_response": candidate_draft,
-        "help_domain": "emergency"
+        "response": candidate_draft,
+        "help_domain": "emergency",
+        "current_intent": "emergency",
+        "next_agent": "emergency_completed",
     }
+
+
+# Backward-compatible alias
+emergency_agent_node = emergency_rag_node

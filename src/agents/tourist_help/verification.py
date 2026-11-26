@@ -39,7 +39,7 @@ def get_verification_llm():
     """
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
-    default_model = os.getenv("DEFAULT_MODEL", "gemini-1.5-flash")
+    default_model = os.getenv("DEFAULT_MODEL", "gemini-2.5-flash")
 
     if gemini_key:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -269,6 +269,11 @@ def help_verification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LangGraph Node for Help Response Verification.
     Validates RAG outputs from EmergencyDB and TouristRAG before presentation.
     """
+    # TODO (Problem 8): The verification node checks candidate responses against retrieved_context,
+    # but currently the upstream nodes (emergency, advisories, recommendations) hardcode the context
+    # directly alongside the candidate draft, causing circular verification where the LLM/heuristic
+    # verifier verifies text against context that was simply copied from it.
+    # Implement true retrieval from knowledge store so verification provides genuine guardrails.
     # 1. Extract User Query
     user_query = state.get("user_query")
     if not user_query:
@@ -324,7 +329,6 @@ def help_verification_node(state: Dict[str, Any]) -> Dict[str, Any]:
         errors.append(f"Guardrail intercepted response: {result.reasoning}")
 
     return {
-        **state,
         "messages": output_messages,
         "response": result.safe_response,
         "verified_response": result.safe_response,
