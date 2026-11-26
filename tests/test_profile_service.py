@@ -238,7 +238,6 @@ def test_merge_extracted_parity():
     assert merged.travel_habits == ["early start"]
 
 
-@pytest.mark.xfail(strict=True, reason="Day 3 (#4): polarity inversion not implemented yet")
 def test_dislike_museums_moves_to_avoided():
     p = UserPreferences(user_id="u", name="U", liked_interests=["museums"])
     ex = ExtractedPreferences(items=[PreferenceItem(category="interest", value="museums", polarity="avoid")])

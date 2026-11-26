@@ -299,9 +299,10 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
         extracted = extract_preference_insights(prompt)
 
     # Persistently update LTM profile store
-    updated_profile = ProfileService.default().apply_extracted(
+    result = ProfileService.default().apply_extracted_with_changes(
         user_id, extracted, current=state.get("user_preferences")
     )
+    updated_profile = result.profile
 
     # Highlight learned features for the user
     learned_items: List[str] = []
@@ -316,7 +317,9 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if extracted.accessibility_needs:
         learned_items.extend(extracted.accessibility_needs)
 
-    summary_phrase = ", ".join(learned_items) if learned_items else "preferences"
+    summary_phrase = "; ".join(result.changes) if result.changes else (
+        ", ".join(learned_items) if learned_items else "preferences"
+    )
 
     fb_type = state.get("feedback_type", "long_term_preference")
 

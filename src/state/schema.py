@@ -80,6 +80,7 @@ class UserInsight(BaseModel):
     insight_type: str  # dietary, travel_habit, budget_level, interest, accessibility
     key: str
     value: Any
+    polarity: Literal["like", "avoid"] = "like"
     tags: List[str] = Field(default_factory=list)
     raw_text: str = ""
     confidence: float = 1.0
