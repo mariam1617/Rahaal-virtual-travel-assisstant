@@ -104,7 +104,7 @@ def recommendations_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # 2. Only fall back to current_location if the query has no explicit destination
     if not destination:
         loc = state.get("current_location", "")
-        if loc and loc != "Location unavailable":
+        if loc and not loc.strip().lower().endswith(" unavailable"):
             destination = loc
 
     # 3. Get user interests for query enrichment

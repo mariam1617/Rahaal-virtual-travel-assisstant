@@ -445,7 +445,7 @@ def answer_emergency_query(query: str, location: Optional[str] = None, kb: Optio
             unique.append(c)
     selected = unique[:4]
 
-    place = location if location and location != "Location unavailable" else None
+    place = location if location and not location.strip().lower().endswith(" unavailable") else None
     if arabic:
         header = "🚨 اتصل فورًا" + (f" (قريب من {place})" if place else "") + ":"
     else:

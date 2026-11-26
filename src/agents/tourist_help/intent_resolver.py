@@ -117,33 +117,26 @@ def extract_coordinates(state: Dict[str, Any]) -> Optional[Tuple[float, float]]:
 def resolve_location_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     LangGraph node for Story 2.1 Coordinate Resolution.
-    Converts incoming raw coordinates into a human-readable location address
-    before any downstream agent (Help Agent, Planner Agent, etc.) inspects the state.
-
-    Overwrites raw coordinates with the formatted `current_location` string.
+    Converts incoming raw coordinates into a short structured location for downstream agents.
     """
     coords = extract_coordinates(state)
-
     if coords is None:
-        return {}
-
+        return state
     lat, lon = coords
-    location_response = reverse_geocode(lat=lat, lon=lon)
-
-    if location_response.error:
-        logger.warning(
-            f"[LocationResolver] Geocoding error for ({lat}, {lon}): {location_response.error}"
-        )
-
+    loc = reverse_geocode(lat=lat, lon=lon)
+    if not loc.ok:
+        logger.warning("[LocationResolver] geocoding failed (%s) for (%s, %s)", loc.error, lat, lon)
+        return {
+            **state,
+            "location_details": loc.to_details(
+                status="unavailable", stale=bool(state.get("current_location"))
+            ),
+        }
     return {
-        "current_location": location_response.formatted_address,
+        **state,
+        "current_location": loc.label or loc.formatted_address,
         "raw_coordinates": None,
-        "location_details": {
-            "city": location_response.city,
-            "country": location_response.country,
-            "formatted_address": location_response.formatted_address,
-            "error": location_response.error,
-        },
+        "location_details": loc.to_details(status="ok"),
     }
 
 # =========================================================================

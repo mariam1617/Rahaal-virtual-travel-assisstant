@@ -251,6 +251,7 @@ def test_extract_coordinates_missing():
 def test_resolve_location_node_success(mock_reverse_geocode):
     mock_reverse_geocode.return_value = LocationResponse(
         city="Cairo",
+        neighborhood="Tahrir Square",
         country="Egypt",
         formatted_address="Tahrir Square, Cairo, Egypt",
         error=None
@@ -264,7 +265,7 @@ def test_resolve_location_node_success(mock_reverse_geocode):
     result = resolve_location_node(state)
 
     mock_reverse_geocode.assert_called_once_with(lat=30.0444, lon=31.2357)
-    assert result["current_location"] == "Tahrir Square, Cairo, Egypt"
+    assert result["current_location"] == "Tahrir Square, Cairo"
     assert result["raw_coordinates"] is None
     assert result["location_details"]["city"] == "Cairo"
     assert result["location_details"]["country"] == "Egypt"
@@ -288,8 +289,7 @@ def test_resolve_location_node_api_error_fallback(mock_reverse_geocode):
     mock_reverse_geocode.return_value = LocationResponse(
         city=None,
         country=None,
-        formatted_address="Location unavailable",
-        error="Connection timed out"
+        error="timeout"
     )
 
     state = {
@@ -298,9 +298,10 @@ def test_resolve_location_node_api_error_fallback(mock_reverse_geocode):
     }
     result = resolve_location_node(state)
 
-    assert result["current_location"] == "Location unavailable"
-    assert result["raw_coordinates"] is None
-    assert result["location_details"]["error"] == "Connection timed out"
+    assert "current_location" not in result
+    assert result["raw_coordinates"] == {"lat": 30.0444, "lng": 31.2357}
+    assert result["location_details"]["status"] == "unavailable"
+    assert result["location_details"]["error"] == "timeout"
 
 
 # =========================================================================
@@ -404,6 +405,7 @@ def test_tourist_help_graph_recommendations_with_coordinates(mock_reverse_geocod
     """Test recommendations with coordinate geocoding + verification."""
     mock_reverse_geocode.return_value = LocationResponse(
         city="Cairo",
+        neighborhood="Downtown",
         country="Egypt",
         formatted_address="Downtown Cairo, Egypt",
         error=None
@@ -416,7 +418,7 @@ def test_tourist_help_graph_recommendations_with_coordinates(mock_reverse_geocod
     result = tourist_help_app.invoke(initial_state)
 
     assert result["current_intent"] == "recommendations"
-    assert result["current_location"] == "Downtown Cairo, Egypt"
+    assert result["current_location"] == "Downtown, Cairo"
     assert result["raw_coordinates"] is None
     assert result["is_verified"] is True
     assert "Downtown Cairo" in result["verified_response"]
@@ -452,6 +454,7 @@ def test_tourist_help_graph_fallback_branch():
 def test_supervisor_graph_resolves_location_and_routes(mock_reverse_geocode):
     mock_reverse_geocode.return_value = LocationResponse(
         city="Cairo",
+        neighborhood="Zamalek",
         country="Egypt",
         formatted_address="Zamalek, Cairo, Egypt",
         error=None
@@ -464,7 +467,7 @@ def test_supervisor_graph_resolves_location_and_routes(mock_reverse_geocode):
     }
 
     final_state = graph.invoke(initial_state)
-    assert final_state["current_location"] == "Zamalek, Cairo, Egypt"
+    assert final_state["current_location"] == "Zamalek, Cairo"
     assert final_state["raw_coordinates"] is None
     assert final_state["next_agent"] == "tourist_help"
     assert final_state["is_egypt_scoped"] is True
@@ -477,6 +480,7 @@ def test_api_supervisor_chat_with_coordinates(mock_reverse_geocode):
 
     mock_reverse_geocode.return_value = LocationResponse(
         city="Giza",
+        neighborhood="Pyramids of Giza",
         country="Egypt",
         formatted_address="Pyramids of Giza, Giza, Egypt",
         error=None
@@ -496,7 +500,7 @@ def test_api_supervisor_chat_with_coordinates(mock_reverse_geocode):
     assert response.status_code == 200
     data = response.json()
     assert data["routed_to"] == "tourist_help"
-    assert data["current_location"] == "Pyramids of Giza, Giza, Egypt"
+    assert data["current_location"] == "Pyramids of Giza, Giza"
 
 
 @patch("src.agents.tourist_help.intent_resolver.reverse_geocode")
@@ -506,6 +510,7 @@ def test_api_tourist_help_query_endpoint(mock_reverse_geocode):
 
     mock_reverse_geocode.return_value = LocationResponse(
         city="Cairo",
+        neighborhood="Tahrir Square",
         country="Egypt",
         formatted_address="Tahrir Square, Cairo, Egypt",
         error=None
@@ -526,4 +531,4 @@ def test_api_tourist_help_query_endpoint(mock_reverse_geocode):
     assert data["help_domain"] == "recommendations"
     assert data["is_verified"] is True
     assert "Koshary" in data["response"]
-    assert data["current_location"] == "Tahrir Square, Cairo, Egypt"
+    assert data["current_location"] == "Tahrir Square, Cairo"

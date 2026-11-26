@@ -39,9 +39,9 @@ def emergency_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
     except ImportError:
         from src.rag.answer import answer_emergency_query  # type: ignore
 
-    # Sanitize location: "Location unavailable" must not leak into the answer header
+    # Do not place an unresolved location in the answer header.
     location = state.get("current_location") or ""
-    if location == "Location unavailable" or not location:
+    if not location or location.strip().lower().endswith(" unavailable"):
         location = None
 
     user_query = _get_latest_user_query(state)
