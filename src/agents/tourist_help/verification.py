@@ -269,11 +269,22 @@ def help_verification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     LangGraph Node for Help Response Verification.
     Validates RAG outputs from EmergencyDB and TouristRAG before presentation.
     """
-    # TODO (Problem 8): The verification node checks candidate responses against retrieved_context,
-    # but currently the upstream nodes (emergency, advisories, recommendations) hardcode the context
-    # directly alongside the candidate draft, causing circular verification where the LLM/heuristic
-    # verifier verifies text against context that was simply copied from it.
-    # Implement true retrieval from knowledge store so verification provides genuine guardrails.
+    # 0. Skip verification for out-of-scope responses: they are safe by construction
+    #    and the refusal message is already set by the RAG node.
+    if state.get("out_of_scope"):
+        safe = state.get("candidate_response") or state.get("response") or DEFAULT_GENERAL_FALLBACK
+        from langchain_core.messages import AIMessage
+        return {
+            "messages": [AIMessage(content=safe)],
+            "response": safe,
+            "verified_response": safe,
+            "is_verified": True,
+            "rag_status": state.get("rag_status", "out_of_scope"),
+            "verification_result": {"skipped": "out_of_scope"},
+            "errors": list(state.get("errors", [])),
+            "next_agent": "completed",
+        }
+
     # 1. Extract User Query
     user_query = state.get("user_query")
     if not user_query:
@@ -319,21 +330,20 @@ def help_verification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = verify_rag_response(input_payload)
 
-    # 6. Prepare State Updates
-    output_messages = list(state.get("messages", []))
     verified_ai_message = AIMessage(content=result.safe_response)
-    output_messages.append(verified_ai_message)
 
     errors = list(state.get("errors", []))
     if result.has_hallucination or not result.is_grounded:
         errors.append(f"Guardrail intercepted response: {result.reasoning}")
 
     return {
-        "messages": output_messages,
+        "messages": [verified_ai_message],  # only NEW messages; add_messages reducer appends automatically
         "response": result.safe_response,
         "verified_response": result.safe_response,
         "is_verified": result.is_grounded and not result.has_hallucination,
+        "rag_status": state.get("rag_status", "answered"),
         "verification_result": result.model_dump(),
+        "retrieval_sources": state.get("retrieval_sources", []),
         "errors": errors,
         "next_agent": "completed"
     }

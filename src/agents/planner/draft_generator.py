@@ -6,6 +6,7 @@ Module: src/agents/planner/draft_generator.py
 """
 
 from typing import Dict, Any, Optional, List
+import re
 import uuid
 from langchain_core.messages import AIMessage
 
@@ -136,6 +137,53 @@ def build_draft_itinerary(
     )
 
 
+def _extract_requirements_from_messages(state: Dict[str, Any]) -> TripRequirements:
+    """
+    Fallback: parse TripRequirements from the last user message when trip_requirements
+    is not explicitly set in state (e.g. when called as a supervisor subgraph).
+    """
+    messages = state.get("messages", [])
+    last_text = ""
+    for msg in reversed(messages):
+        if isinstance(msg, tuple) and len(msg) >= 2 and str(msg[0]).lower() in ("user", "human"):
+            last_text = str(msg[1])
+            break
+        elif hasattr(msg, "type") and msg.type == "human":
+            last_text = str(msg.content)
+            break
+        elif hasattr(msg, "role") and msg.role == "user":
+            last_text = str(msg.content)
+            break
+
+    text = last_text.lower().strip()
+
+    # Destination: pick first Egyptian city mentioned
+    egypt_cities = ["luxor", "aswan", "cairo", "giza", "alexandria", "hurghada",
+                    "sharm el sheikh", "dahab", "siwa"]
+    destination = "Cairo"
+    for city in egypt_cities:
+        if re.search(rf"\b{re.escape(city)}\b", text):
+            destination = city.title()
+            break
+
+    # Duration
+    day_match = re.search(r"\b(\d+)\s*[-\s]*(?:day|days|night|nights)\b", text)
+    duration_days = int(day_match.group(1)) if day_match else 3
+    duration_days = max(1, min(duration_days, 14))
+
+    # Budget
+    budget_match = re.search(
+        r"(?:\$|usd\s*|budget\s*(?:of|is)?\s*\$?)\s*(\d+(?:,\d+)?(?:\.\d+)?)", text
+    )
+    total_budget = float(budget_match.group(1).replace(",", "")) if budget_match else 350.0
+
+    return TripRequirements(
+        destination=destination,
+        duration_days=duration_days,
+        total_budget=total_budget,
+    )
+
+
 def draft_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     LangGraph Node for Story 3.1:
@@ -143,7 +191,9 @@ def draft_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     requirements = state.get("trip_requirements")
     if not isinstance(requirements, TripRequirements):
-        requirements = TripRequirements(destination="Cairo", duration_days=3, total_budget=350.0)
+        # No explicit requirements in state — parse from the user's message
+        # (happens when the planner is called as a supervisor subgraph)
+        requirements = _extract_requirements_from_messages(state)
 
     preferences = state.get("user_preferences")
     plan = build_draft_itinerary(requirements, preferences)

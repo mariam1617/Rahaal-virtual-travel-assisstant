@@ -34,19 +34,28 @@ Your mission is to accurately parse the user's travel request, strictly enforce 
 
 ### Domain Classification Criteria
 1. "planner":
-   - Multi-day itineraries (e.g., "Plan a 3-day trip to Cairo", "5 days in Luxor and Aswan").
-   - Itinerary design based on budget, pace, family, or specific dates in Egypt.
-   - Day-by-day scheduling of sights, temples, and activities.
+   - Explicit multi-day itinerary requests (e.g., "Plan a 3-day trip to Cairo", "5 days in Luxor and Aswan").
+   - Day-by-day scheduling of sights, temples, and activities with a clear duration or date range.
+   - Budget-based travel planning requests.
+   - DO NOT use "planner" for simple factual questions about how to travel between cities.
 
 2. "tourist_help":
-   - Immediate on-the-ground traveler assistance, local rules, emergency numbers (Tourist Police, Ambulance).
-   - Egyptian eVisa and Visa on Arrival eligibility requirements.
-   - Local cultural rules, tipping (baksheesh), scams, SIM cards, or dress codes.
-   - Spontaneous hyper-local recommendations (e.g., "Where can I eat Koshary near Tahrir Square right now?", "Best cafes in Zamalek").
+   - ALL factual traveler information questions, including:
+     * Visa/passport/eVisa/entry requirements.
+     * Emergency numbers (Tourist Police 126, Ambulance 123, Police 122, Fire 180).
+     * Transportation OPTIONS between cities (e.g., "How can I travel from Cairo to Luxor?", "Is there a bus from Cairo to Alexandria?").
+     * Taxi, tipping/baksheesh, Uber, Careem information.
+     * Safety advisories, crime risks, travel warnings.
+     * Hospital, medical, and pharmacy information.
+     * Cultural rules: dress codes, alcohol, photography, drones, Ramadan.
+     * SIM cards, currency exchange, customs.
+     * Local place recommendations, cafes, restaurants.
+   - KEY RULE: If the user asks HOW to travel between two Egyptian cities (transport options, bus times, train info), route to "tourist_help" — NOT planner. Only route to planner if they ask for a full trip schedule with days.
 
 3. "execution":
-   - Explicit intent to book or reserve flights, buses (GoBus), trains (ENR), or hotels.
+   - Explicit intent to BOOK or RESERVE: flights, buses (GoBus), trains (ENR), hotels.
    - Calendar synchronization requests (e.g., "Sync this schedule to my Google Calendar").
+   - Must use the word 'book', 'reserve', 'ticket', or 'calendar'.
 
 4. "feedback":
    - Modifying or tweaking an existing generated itinerary (e.g., "Remove the museum on day 2", "I prefer vegetarian food instead").
@@ -54,7 +63,8 @@ Your mission is to accurately parse the user's travel request, strictly enforce 
 
 5. "profiling":
    - Ambiguous, vague, or generic queries that lack clear travel details (e.g., "Hi", "Help me plan something", "I want to travel", "What can you do?").
-   - When the user's intent is unclear or confidence is below 0.65, route to profiling so the interviewer agent can gather preferences.
+   - When the user's intent is unclear or confidence is below 0.65, route to profiling.
+   - NEVER route to profiling for clear factual questions about Egypt travel (visas, transport, safety, emergency).
 
 6. "out_of_scope":
    - Non-Egypt travel requests or non-travel queries (e.g., coding, math, general chat).
@@ -62,6 +72,17 @@ Your mission is to accurately parse the user's travel request, strictly enforce 
 7. "FINISH":
    - Use this only when a previous subgraph completed the request or no more subgraph handoffs are needed.
    - Never repeat a subgraph that appears in completed_steps.
+
+### Examples of Correct Routing
+- "How can I travel from Cairo to Luxor by bus?" → tourist_help
+- "What transportation options are there from Cairo to Alexandria?" → tourist_help
+- "How much should I tip a taxi driver in Cairo?" → tourist_help
+- "Is it safe to travel to Luxor?" → tourist_help
+- "Where is the nearest hospital in Cairo?" → tourist_help
+- "What are the latest safety advisories for tourists in Egypt?" → tourist_help
+- "Plan a 3-day trip to Cairo" → planner
+- "Book a GoBus ticket from Cairo to Alexandria" → execution
+- "I want to travel" → profiling
 
 Output your decision strictly adhering to the SupervisorDecision schema.
 """
@@ -153,7 +174,9 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
         )
 
     # 3. Execution / Booking / Calendar
-    booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus", "hotel", "train to", "bus to"]
+    # NOTE: "bus to" and "train to" are intentionally removed — those are information
+    # queries, not bookings. Only explicit booking verbs trigger execution routing.
+    booking_keywords = ["book", "reserve", "ticket", "calendar", "sync", "flight ticket", "gobus", "hotel"]
     if any(re.search(rf"\b{re.escape(bw)}\b", text) for bw in booking_keywords):
         return SupervisorDecision(
             target="execution",
@@ -162,24 +185,68 @@ def heuristic_fallback_classifier(user_text: str) -> SupervisorDecision:
             reasoning="User explicitly requested booking or calendar synchronization."
         )
 
-    # 4. Tourist Help / Visas / Emergencies / Nearby
-    help_keywords = ["visa", "emergency", "police", "embassy", "dress code", "scam", "tipping", "koshary", "near me", "nearby", "recommend", "sim card", "weather", "currency", "transport", "eat in", "cafes"]
+    # 4. Tourist Help — factual traveler information (checked BEFORE planner to prevent
+    #    intercity transport questions being misclassified as itinerary requests)
+    help_keywords = [
+        # Visa & entry
+        "visa", "evisa", "e-visa", "passport", "immigration", "embassy",
+        # Emergency & medical
+        "emergency", "police", "ambulance", "hospital", "doctor", "clinic", "pharmacy",
+        # Transport info (how to travel between cities — NOT booking)
+        "transport", "transportation", "how to travel", "how can i travel",
+        "how do i get", "how to get", "getting to", "getting from",
+        "taxi", "taxis", "metro", "uber", "careem", "ferry",
+        # Tipping & money
+        "tipping", "tip", "baksheesh",
+        # Safety
+        "safety", "safe", "dangerous", "danger", "advisory", "advisories",
+        "scam", "scams", "crime",
+        # Cultural rules
+        "dress code", "sim card", "currency", "alcohol", "photography",
+        # Recommendations
+        "recommend", "koshary", "near me", "nearby", "cafes", "restaurant",
+    ]
     if any(re.search(rf"\b{re.escape(hw)}\b", text) for hw in help_keywords):
         return SupervisorDecision(
             target="tourist_help",
             confidence=0.88,
             is_egypt_scoped=True,
-            reasoning="User requested immediate tourist advice, visa information, emergency help, or nearby POIs."
+            reasoning="User requested factual tourist advice, visa information, transport options, emergency help, or nearby POIs."
+        )
+    # Also catch multi-word transport patterns not covered by single-word keywords
+    transport_patterns = [
+        r"how\s+(?:can|do|could|would)\s+(?:i|we)\s+(?:travel|get|go|reach)",
+        r"(?:travel|get)\s+from\s+\w+\s+to\s+\w+",
+        r"(?:is\s+there\s+a?\s*|what\s+(?:are\s+the?\s*)?)?(?:bus|train|flight)\s+(?:from|between|to)",
+        r"how\s+much\s+(?:to\s+tip|(?:does|is)\s+(?:it|that)\s+cost)",
+    ]
+    if any(re.search(p, text) for p in transport_patterns):
+        return SupervisorDecision(
+            target="tourist_help",
+            confidence=0.87,
+            is_egypt_scoped=True,
+            reasoning="User asked about transport options or tipping — factual tourist information."
         )
 
-    # 5. Planner (New Itinerary Generation)
-    planner_keywords = ["itinerary", "plan", "days in", "day trip", "visit cairo", "visit luxor", "aswan", "alexandria", "schedule", "budget for"]
+    # 5. Planner (New Itinerary Generation) — only explicit multi-day planning
+    planner_keywords = ["itinerary", "day trip", "schedule", "budget for"]
+    planner_patterns = [
+        r"\b(?:plan|create|make|design|build)\s+(?:a\s+)?(?:\d+[-\s]day|my|a|the)\s+(?:trip|itinerary|tour|visit|schedule)",
+        r"\b\d+\s+days?\s+in\s+\w+",
+    ]
     if any(re.search(rf"\b{re.escape(pw)}\b", text) for pw in planner_keywords):
         return SupervisorDecision(
             target="planner",
             confidence=0.92,
             is_egypt_scoped=True,
             reasoning="User requested travel planning or multi-day itinerary generation for Egypt."
+        )
+    if any(re.search(p, text) for p in planner_patterns):
+        return SupervisorDecision(
+            target="planner",
+            confidence=0.90,
+            is_egypt_scoped=True,
+            reasoning="User requested a structured multi-day trip plan."
         )
 
     # 6. Ambiguous / Short greeting -> Profiling

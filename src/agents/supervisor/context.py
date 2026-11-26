@@ -31,11 +31,23 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
         }
 
     if profile is None:
+        # Only force profiling if the user sent a vague/short query.
+        # Detailed queries (plan trips, visa questions, etc.) should go straight to supervisor.
+        messages = state.get("messages", [])
+        last_text = ""
+        if messages:
+            last = messages[-1]
+            if isinstance(last, tuple) and len(last) >= 2:
+                last_text = str(last[1])
+            elif hasattr(last, "content"):
+                last_text = str(last.content)
+
+        force_profiling = len(last_text.strip()) < 15  # only short/vague queries need profiling
         return {
             "context_loaded": False,
             "context_warning": f"No profile found for user '{user_id}'.",
-            "needs_profiling": True,
-            "next_agent": "profiling",
+            "needs_profiling": force_profiling,
+            "next_agent": "profiling" if force_profiling else "",
         }
 
     return {
@@ -45,5 +57,11 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
     }
 
 def route_context(state: Dict[str, Any]) -> str:
-    """Route unknown users to profiling before specialist classification."""
+    """Route unknown users to profiling before specialist classification.
+    
+    Only force profiling when the user genuinely has no profile in the DB.
+    If context failed to load due to a transient error (context_loaded=False but no
+    needs_profiling flag), still let the supervisor classify the intent so the user's
+    actual request is handled.
+    """
     return "profiling" if state.get("needs_profiling") else "supervisor"

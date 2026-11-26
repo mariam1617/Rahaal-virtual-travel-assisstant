@@ -167,6 +167,63 @@ EGYPT_PLACES_DATABASE: List[Dict[str, Any]] = [
         "description": "Authentic Upper Egyptian cuisine served in a charming vintage oriental townhouse."
     },
 
+    # --- Aswan ---
+    {
+        "id": "asw_philae",
+        "name": "Philae Temple (Temple of Isis)",
+        "destination": "Aswan",
+        "city": "Aswan",
+        "category": "historical",
+        "estimated_cost_usd": 18.0,
+        "recommended_duration_hours": 2.5,
+        "coordinates": {"lat": 24.0253, "lng": 32.8842},
+        "description": "Magnificently preserved Ptolemaic temple complex dedicated to Isis, located on Agilkia Island."
+    },
+    {
+        "id": "asw_high_dam",
+        "name": "Aswan High Dam",
+        "destination": "Aswan",
+        "city": "Aswan",
+        "category": "historical",
+        "estimated_cost_usd": 5.0,
+        "recommended_duration_hours": 1.5,
+        "coordinates": {"lat": 23.9700, "lng": 32.8775},
+        "description": "One of the world's largest dams, creating Lake Nasser and transforming Egypt's agriculture."
+    },
+    {
+        "id": "asw_felucca",
+        "name": "Nile Felucca Ride to Elephantine Island",
+        "destination": "Aswan",
+        "city": "Aswan",
+        "category": "activity",
+        "estimated_cost_usd": 12.0,
+        "recommended_duration_hours": 2.0,
+        "coordinates": {"lat": 24.0869, "lng": 32.8826},
+        "description": "Scenic traditional sailboat ride between Aswan's islands, passing Nubian villages and ruins."
+    },
+    {
+        "id": "asw_nubian_village",
+        "name": "Nubian Village Cultural Tour",
+        "destination": "Aswan",
+        "city": "Aswan",
+        "category": "cultural",
+        "estimated_cost_usd": 10.0,
+        "recommended_duration_hours": 2.0,
+        "coordinates": {"lat": 24.1024, "lng": 32.8759},
+        "description": "Colorful Nubian community on the west bank, with traditional crafts, henna art, and tea."
+    },
+    {
+        "id": "asw_1902",
+        "name": "1902 Restaurant at the Old Cataract Hotel",
+        "destination": "Aswan",
+        "city": "Aswan",
+        "category": "dining",
+        "estimated_cost_usd": 30.0,
+        "recommended_duration_hours": 1.5,
+        "coordinates": {"lat": 24.0784, "lng": 32.8905},
+        "description": "Iconic fine-dining restaurant in the historic Old Cataract Hotel with sweeping Nile views."
+    },
+
     # --- Alexandria ---
     {
         "id": "alx_bibliotheca",

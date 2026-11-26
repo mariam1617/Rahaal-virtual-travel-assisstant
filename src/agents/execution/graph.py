@@ -33,4 +33,4 @@ def create_execution_graph(checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
-execution_app = create_execution_graph(checkpointer=checkpointer)
+execution_app = create_execution_graph()
