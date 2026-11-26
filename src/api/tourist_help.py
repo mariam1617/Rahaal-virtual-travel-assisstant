@@ -4,7 +4,7 @@ FastAPI endpoint executing the compiled Tourist Help Subgraph synchronously.
 Module: src/api/tourist_help.py
 """
 
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -25,7 +25,6 @@ class TouristHelpResponse(BaseModel):
     help_domain: str
     is_verified: bool
     verification_details: Dict[str, Any]
-    current_location: Optional[str] = None
 
 
 @router.post("/query", response_model=TouristHelpResponse)
@@ -52,6 +51,5 @@ def query_tourist_help(request: TouristHelpRequest):
         response=final_state.get("verified_response", final_state.get("response", "")),
         help_domain=final_state.get("help_domain", "general"),
         is_verified=final_state.get("is_verified", False),
-        verification_details=final_state.get("verification_result", {}),
-        current_location=final_state.get("current_location")
+        verification_details=final_state.get("verification_result", {})
     )

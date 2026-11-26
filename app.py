@@ -252,9 +252,14 @@ def format_itinerary(plan):
         for activity in activities:
             name = activity.get("name", "Activity")
             time_slot = activity.get("time_slot")
-            cost = float(activity.get("cost_usd", 0) or 0)
+            act_cost = float(activity.get("cost_usd", 0) or 0)
+            transit_cost = float(activity.get("transit_cost_usd", 0) or 0)
             prefix = f"[{time_slot.title()}] " if time_slot else ""
-            lines.append(f"- {prefix}{name} - ${cost:.2f}")
+            # Show transit cost inline so displayed costs sum to the day total
+            if transit_cost > 0:
+                lines.append(f"- {prefix}{name} - ${act_cost:.2f} + ${transit_cost:.2f} transport")
+            else:
+                lines.append(f"- {prefix}{name} - ${act_cost:.2f}")
     lines.append(f"\n**Estimated total: ${total_cost:.2f}**")
     return "\n".join(lines)
 
@@ -756,16 +761,51 @@ def handle_prompt(prompt, user):
     with st.chat_message("assistant"):
         route, confidence, final_state = "profiling", None, {}
         try:
+            session_id = st.session_state.get("session_id", "default")
+            # Use a per-message thread_id so completed_steps from previous turns don't
+            # block re-routing to the same subgraph (e.g. two consecutive tourist_help queries).
+            turn_index = len(st.session_state.get("messages", []))
+            supervisor_config = {"configurable": {"thread_id": f"supervisor-{session_id}-{turn_index}"}}
             with st.spinner("Ra7al is identifying the best specialist..."):
-                final_state = get_supervisor().invoke(state)
-            route = final_state.get("target_subgraph") or final_state.get("next_agent", "profiling")
+                final_state = get_supervisor().invoke(state, config=supervisor_config)
+            # When the supervisor finishes with FINISH/empty target, infer the actual
+            # specialist from the last completed step so the route badge is meaningful.
+            raw_route = final_state.get("target_subgraph") or final_state.get("next_agent", "profiling")
+            completed = final_state.get("completed_steps") or []
+            route = raw_route if raw_route not in ("", "FINISH") else (completed[-1] if completed else "profiling")
             confidence = final_state.get("confidence")
-            specialist_response = final_state.get("response")
-            if specialist_response is None:
-                specialist_response = dispatch_specialist(route, prompt, state)
-        except Exception:
+
+            # Check if the planner subgraph raised a HITL interrupt inside the supervisor graph
+            supervisor_interrupt = get_interrupt_payload(final_state)
+            if supervisor_interrupt and isinstance(supervisor_interrupt, dict) and supervisor_interrupt.get("type") == "plan_approval":
+                plan = supervisor_interrupt.get("plan")
+                plan_id = supervisor_interrupt.get("plan_id")
+                supervisor_thread_id = supervisor_config["configurable"]["thread_id"]
+                st.session_state.pending_approval = {
+                    "plan": plan,
+                    "thread_id": supervisor_thread_id,
+                    "interrupt_payload": supervisor_interrupt,
+                    "use_supervisor": True,  # resume via supervisor graph, not planner directly
+                }
+                plan_dict = plan if isinstance(plan, dict) else (plan.model_dump() if hasattr(plan, "model_dump") else {})
+                specialist_response = {
+                    "text": format_itinerary(plan_dict),
+                    "approval_required": True,
+                    "plan": plan_dict,
+                    "thread_id": supervisor_thread_id,
+                    "interrupt_payload": supervisor_interrupt,
+                }
+            else:
+                specialist_response = final_state.get("response")
+                # Only call dispatch_specialist if supervisor returned nothing (None, not empty string)
+                if specialist_response is None:
+                    specialist_response = dispatch_specialist(route, prompt, state)
+        except Exception as _exc:
+            import traceback, sys
+            tb = traceback.format_exc()
             logger.exception("Request failed")
-            specialist_response = "Sorry, something went wrong while handling that request. Please try again."
+            print(tb, file=sys.stderr, flush=True)
+            specialist_response = f"Sorry, something went wrong while handling that request. Please try again.\n\n**Debug info (remove before release):**\n```\n{tb[-2000:]}\n```"
 
         if isinstance(specialist_response, dict):
             response = specialist_response.get("text", "")
@@ -794,6 +834,7 @@ def handle_prompt(prompt, user):
     st.session_state.route_history.append(route)
     if should_rerun_for_approval:
         st.rerun()
+
 
 
 def render_workspace(user):

@@ -28,7 +28,18 @@ def planner_delegate_node(state: AppState) -> Dict[str, Any]:
         "response": "Forwarding your itinerary planning request to the Planner Agent.",
     }
 
-def create_tourist_help_graph():
+
+def _is_out_of_scope(state: Dict[str, Any]) -> str:
+    """
+    Conditional edge: if a RAG node marked the response as out_of_scope,
+    skip verification and go directly to END. Otherwise proceed to verification.
+    """
+    if state.get("out_of_scope"):
+        return "end"
+    return "verification"
+
+
+def create_tourist_help_graph(checkpointer=None):
     """
     Builds and compiles the synchronous Tourist Help LangGraph workflow.
     
@@ -42,11 +53,14 @@ def create_tourist_help_graph():
       intent_parser_node (Parses inquiry, sets state["current_intent"] & state["help_domain"])
         │
         ▼ [conditional edge: route_request]
-      ├── "emergency"       -> emergency_rag_node    ──────┐
-      ├── "advisories"      -> advisories_rag_node   ──────┼──► verification (Guardrail Node) -> END
-      ├── "recommendations" -> recommendations_node  ──────┘
-      ├── "planner_agent"   -> planner_delegate_node ─────────► END
-      └── "fallback"        -> fallback_agent_node   ─────────► END
+      ├── "emergency"       -> emergency_rag_node    ──► [scope check] ──► verification -> END
+      ├── "advisories"      -> advisories_rag_node   ──► [scope check] ──► verification -> END
+      ├── "recommendations" -> recommendations_node  ──► [scope check] ──► verification -> END
+      ├── "planner_agent"   -> planner_delegate_node ──────────────────────────────────► END
+      └── "fallback"        -> fallback_agent_node   ──► [scope check] ──► verification -> END
+
+    Out-of-scope responses (e.g. "visa for France") skip verification and go
+    directly to END, since the refusal message is already safe by construction.
     """
     workflow = StateGraph(AppState)
 
@@ -77,15 +91,21 @@ def create_tourist_help_graph():
         }
     )
 
-    # 4. RAG and recommendation outputs pass through verification guardrail
-    workflow.add_edge("emergency", "verification")
-    workflow.add_edge("advisories", "verification")
-    workflow.add_edge("recommendations", "verification")
+    # 4. RAG nodes pass through scope check, then verification
+    for rag_node in ("emergency", "advisories", "recommendations", "fallback"):
+        workflow.add_conditional_edges(
+            rag_node,
+            _is_out_of_scope,
+            {
+                "end": END,
+                "verification": "verification",
+            }
+        )
+
     workflow.add_edge("verification", END)
 
-    # 5. Direct terminal edges for delegation and fallback
+    # 5. Direct terminal edge for planner delegation
     workflow.add_edge("planner_agent", END)
-    workflow.add_edge("fallback", END)
 
     return workflow.compile(checkpointer=checkpointer)
 
