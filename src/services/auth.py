@@ -17,7 +17,6 @@ from src.db.repositories.user_repo import (
     SQLiteUserRepository,
     UserRecord,
 )
-from src.state.memory import MOCK_USER_DB
 from src.state.schema import DietaryPreference
 
 
@@ -134,7 +133,7 @@ class AuthService:
         password: str,
         name: str,
         email: Optional[str] = None,
-        nationality: str = "Egyptian"
+        nationality: Optional[str] = None
     ) -> Tuple[bool, str, Optional[UserRecord]]:
         """
         Registers a new traveler account.
@@ -171,24 +170,11 @@ class AuthService:
             name=display_name,
             email=clean_email,
             hashed_password=hashed,
-            nationality=nationality.strip() if nationality else "Egyptian",
+            nationality=nationality.strip() if nationality and nationality.strip() else None,
         )
 
         try:
             persisted_user = self.user_repo.create(user_record)
-
-            # 4. Provision Traveler Profile for Concierge Agents
-            MOCK_USER_DB[clean_username] = {
-                "user_id": clean_username,
-                "name": display_name,
-                "nationality": user_record.nationality,
-                "dietary": [DietaryPreference.NONE],
-                "budget_level": "moderate",
-                "interests": [],
-                "accessibility_needs": [],
-                "travel_habits": [],
-            }
-
             return True, "Account created successfully.", persisted_user
         except Exception as e:
             return False, f"Registration failed: {str(e)}", None

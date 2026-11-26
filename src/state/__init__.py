@@ -1,5 +1,6 @@
 from .schema import (
     UserPreferences,
+    PreferenceItem,
     TripRequirements,
     GeneratedPlan,
     ItineraryDay,
@@ -12,11 +13,12 @@ from .schema import (
 )
 from .app_state import AppState
 from .overall_state import OverallState
-from .memory import MemoryLoader, MOCK_USER_DB
+from .memory import MemoryLoader
 
 __all__ = [
     "AppState",
     "UserPreferences",
+    "PreferenceItem",
     "TripRequirements",
     "GeneratedPlan",
     "ItineraryDay",
@@ -28,5 +30,4 @@ __all__ = [
     "PlanModification",
     "OverallState",
     "MemoryLoader",
-    "MOCK_USER_DB",
 ]

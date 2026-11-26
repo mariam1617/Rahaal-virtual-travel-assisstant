@@ -13,7 +13,7 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
     # Ensure guest/anonymous sessions do not overwrite each other or share persistent profiles.
     user_id = state.get("user_id")
     if not user_id:
-        return {"context_loaded": False}
+        return {"context_loaded": False, "is_guest": True}
 
     try:
         # TODO (Problem 2): Profile logic exists three times (ProfileStore, MemoryLoader, SQLiteUserRepository).
@@ -22,6 +22,7 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
     except Exception:
         return {
             "context_loaded": False,
+            "is_guest": True,
             "context_warning": (
                 f"Unable to load profile for user '{user_id}' due to a "
                 "database or connection error."
@@ -45,6 +46,7 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
         force_profiling = len(last_text.strip()) < 15  # only short/vague queries need profiling
         return {
             "context_loaded": False,
+            "is_guest": True,
             "context_warning": f"No profile found for user '{user_id}'.",
             "needs_profiling": force_profiling,
             "next_agent": "profiling" if force_profiling else "",
@@ -53,6 +55,7 @@ def hydrate_context_node(state: AppState) -> Dict[str, Any]:
     return {
         "user_preferences": profile,
         "context_loaded": True,
+        "is_guest": False,
         "needs_profiling": False,
     }
 

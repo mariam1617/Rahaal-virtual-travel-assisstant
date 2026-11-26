@@ -282,11 +282,9 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
     Saves extracted insights persistently into the user's Long-Term Memory (LTM)
     profile store and updates active session state.
     """
-    from src.db.profile_store import ProfileStore
+    from src.services.profile_service import ProfileService
 
-    # TODO (Problem 13): All users share one profile because anonymous or unauthenticated users
-    # default to user_id = "test_user". Use session-scoped ephemeral profiles for guests or enforce auth.
-    user_id = state.get("user_id") or "test_user"
+    user_id = state.get("user_id")
 
     # Hydrate ExtractedPreferences object
     pending = state.get("pending_preferences")
@@ -301,7 +299,9 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
         extracted = extract_preference_insights(prompt)
 
     # Persistently update LTM profile store
-    updated_profile = ProfileStore.update_user_preferences(user_id, extracted)
+    updated_profile = ProfileService.default().apply_extracted(
+        user_id, extracted, current=state.get("user_preferences")
+    )
 
     # Highlight learned features for the user
     learned_items: List[str] = []
@@ -320,23 +320,30 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     fb_type = state.get("feedback_type", "long_term_preference")
 
-    if fb_type == "both":
+    if not ProfileService.default().is_registered(user_id):
+        next_node = "itinerary_modifier" if fb_type == "both" else "feedback_completed"
+        confirm_msg = (
+            f" Noted your preference for **{summary_phrase}** for this session. "
+            f"Now updating your active itinerary..." if fb_type == "both" else
+            f" **Preferences Noted!** I've recorded your preference for **{summary_phrase}** for this session."
+        )
+    elif fb_type == "both":
         # Compound intent: preference saved, proceed to modify the itinerary
         # TODO (Problem 11): The "both" feedback path is broken.
         # ltm_preference_update_node appends its AI confirmation message to `messages`.
         # When itinerary_modifier_node runs next, it reads `messages[-1]` and ends up parsing
-        # "✅ Saved your preference..." as the user's request.
+        # " Saved your preference..." as the user's request.
         # Either pass the original user request explicitly (e.g. in `state["user_query"]` or `modification_intent`)
         # or have the modifier filter messages for the last HumanMessage.
         next_node = "itinerary_modifier"
         confirm_msg = (
-            f"✅ Saved your preference for **{summary_phrase}** to your travel profile. "
+            f"Saved your preference for **{summary_phrase}** to your travel profile. "
             f"Now updating your active itinerary..."
         )
     else:
         next_node = "feedback_completed"
         confirm_msg = (
-            f"✅ **Profile Updated!** I've recorded your preference for **{summary_phrase}** "
+            f" **Profile Updated!** I've recorded your preference for **{summary_phrase}** "
             f"in your travel profile. Future itineraries and recommendations will automatically reflect this!"
         )
 
