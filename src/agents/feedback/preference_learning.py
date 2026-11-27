@@ -322,12 +322,6 @@ def ltm_preference_update_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if fb_type == "both":
         # Compound intent: preference saved, proceed to modify the itinerary
-        # TODO (Problem 11): The "both" feedback path is broken.
-        # ltm_preference_update_node appends its AI confirmation message to `messages`.
-        # When itinerary_modifier_node runs next, it reads `messages[-1]` and ends up parsing
-        # "✅ Saved your preference..." as the user's request.
-        # Either pass the original user request explicitly (e.g. in `state["user_query"]` or `modification_intent`)
-        # or have the modifier filter messages for the last HumanMessage.
         next_node = "itinerary_modifier"
         confirm_msg = (
             f"✅ Saved your preference for **{summary_phrase}** to your travel profile. "
