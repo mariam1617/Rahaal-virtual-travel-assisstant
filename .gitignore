@@ -58,3 +58,4 @@ Thumbs.db
 # Jupyter Notebook (if you use it for agent prototyping)
 .ipynb_checkpoints/
 AgenticEnv/pyvenv.cfg
+.venv-new/
