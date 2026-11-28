@@ -19,45 +19,73 @@ from src.state.schema import (
 )
 
 
+from functools import lru_cache
+import logging
+
+logger = logging.getLogger(__name__)
+
 EMBEDDING_DIM = 384
 
 
-def compute_insight_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[float]:
-    """
-    Computes a deterministic, unit-normalized semantic embedding vector.
-    Compatible with cosine similarity and vector store indexing without
-    requiring external network calls or heavy deep learning runtime overhead in test suites.
-    """
-    # TODO (Problem 14): The embeddings aren't semantic.
-    # compute_insight_embedding uses a hashed bag of n-grams (SHA-256 % dim), which lacks true semantic geometry;
-    # therefore synonyms like "vegan" and "plant-based" produce near-orthogonal vectors and never match.
-    # Replace with real text embedding models (e.g. text-embedding-004 or sentence-transformers) for production.
-    clean_text = text.lower().strip()
-    if not clean_text:
-        return [0.0] * dim
+@lru_cache(maxsize=1)
+def _get_gemini_embedder():
+    """Initializes and caches GoogleGenerativeAIEmbeddings if GOOGLE_API_KEY is available."""
+    if not os.getenv("GOOGLE_API_KEY"):
+        return None
+    try:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    except Exception as e:
+        logger.warning(f"Could not initialize Gemini embeddings, falling back to hash vector: {e}")
+        return None
 
-    # Generate deterministic pseudo-semantic vector from token n-grams
+
+def _l2_normalize(vec: List[float]) -> List[float]:
+    """L2 normalizes a vector to unit length for accurate cosine similarity."""
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm > 0:
+        return [round(x / norm, 6) for x in vec]
+    return [0.0] * len(vec)
+
+
+def _fallback_hash_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[float]:
+    """Fallback deterministic vector when offline or GOOGLE_API_KEY is not set."""
     vector = [0.0] * dim
-    tokens = re.findall(r"\w+", clean_text)
+    tokens = re.findall(r"\w+", text.lower().strip())
     for i, token in enumerate(tokens):
-        # Hash each token and positional pair into vector space
         token_hash = int(hashlib.sha256(token.encode("utf-8")).hexdigest(), 16)
         idx = token_hash % dim
         weight = 1.0 / (1.0 + 0.1 * i)
         vector[idx] += weight
-
-        # Also encode bigrams for phrase awareness
         if i > 0:
             bigram = f"{tokens[i-1]}_{token}"
             bigram_hash = int(hashlib.sha256(bigram.encode("utf-8")).hexdigest(), 16)
-            b_idx = bigram_hash % dim
-            vector[b_idx] += 1.5 * weight
+            vector[bigram_hash % dim] += 1.5 * weight
 
-    # L2 Normalization
-    norm = math.sqrt(sum(x * x for x in vector))
-    if norm > 0:
-        vector = [round(x / norm, 6) for x in vector]
-    return vector
+    return _l2_normalize(vector)
+
+
+def compute_insight_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[float]:
+    """
+    Computes a deterministic, unit-normalized semantic embedding vector using
+    Gemini text-embedding-004 (sliced & L2-normalized to `dim`), with a deterministic
+    offline fallback for test environments without API keys.
+    """
+    clean_text = text.lower().strip()
+    if not clean_text:
+        return [0.0] * dim
+
+    embedder = _get_gemini_embedder()
+    if embedder is not None:
+        try:
+            raw_vec = embedder.embed_query(clean_text)
+            # Matryoshka truncation/padding to match EMBEDDING_DIM (384) and re-normalize
+            resized = (raw_vec + [0.0] * dim)[:dim]
+            return _l2_normalize(resized)
+        except Exception as e:
+            logger.warning(f"Embedding API call failed, using fallback: {e}")
+
+    return _fallback_hash_embedding(clean_text, dim)
 
 
 def extract_preference_insights(text: str) -> ExtractedPreferences:
